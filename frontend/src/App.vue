@@ -17,8 +17,28 @@
         >
           <span class="char-name">{{ char.name }}</span>
           <span class="char-title">{{ char.title }}</span>
+          <span v-if="selectedCharacters.includes(char.id)" class="player-type">
+            {{ playerConfigs[char.id]?.isAI ? '🤖 AI' : '👤 玩家' }}
+          </span>
         </div>
       </div>
+
+      <!-- 已选角色AI/玩家切换 -->
+      <div v-if="selectedCharacters.length > 0" class="player-config-section">
+        <h3>玩家设置</h3>
+        <div v-for="charId in selectedCharacters" :key="charId" class="player-config-item">
+          <span>{{ getCharacterName(charId) }}</span>
+          <label class="ai-toggle">
+            <input
+              type="checkbox"
+              :checked="playerConfigs[charId]?.isAI"
+              @change="toggleAI(charId)"
+            >
+            <span>AI玩家</span>
+          </label>
+        </div>
+      </div>
+
       <button class="start-btn" @click="startGame" :disabled="selectedCharacters.length < 2">
         开始游戏 ({{ selectedCharacters.length }}/4)
       </button>
@@ -114,6 +134,7 @@ import PlayerPanel from './components/PlayerPanel.vue'
 const store = useGameStore()
 
 const selectedCharacters = ref<string[]>([])
+const playerConfigs = ref<Record<string, { isAI: boolean }>>({})
 
 // AI回合自动触发
 watch(() => gameState.value.phase, (phase) => {
@@ -151,10 +172,22 @@ function toggleCharacter(charId: string) {
   if (index === -1) {
     if (selectedCharacters.value.length < 4) {
       selectedCharacters.value.push(charId)
+      playerConfigs.value[charId] = { isAI: false }
     }
   } else {
     selectedCharacters.value.splice(index, 1)
+    delete playerConfigs.value[charId]
   }
+}
+
+function toggleAI(charId: string) {
+  if (playerConfigs.value[charId]) {
+    playerConfigs.value[charId].isAI = !playerConfigs.value[charId].isAI
+  }
+}
+
+function getCharacterName(charId: string): string {
+  return CHARACTERS.find(c => c.id === charId)?.name || ''
 }
 
 function startGame() {
@@ -162,7 +195,7 @@ function startGame() {
     id: `player-${index}`,
     name: CHARACTERS.find(c => c.id === charId)?.name || `玩家${index + 1}`,
     characterId: charId,
-    isAI: false
+    isAI: playerConfigs.value[charId]?.isAI || false
   }))
 
   store.initGame(configs)
@@ -171,6 +204,7 @@ function startGame() {
 function resetGame() {
   gameState.value.phase = 'waiting'
   selectedCharacters.value = []
+  playerConfigs.value = {}
 }
 
 function onRoll() {
@@ -285,6 +319,50 @@ header h1 {
   font-size: 12px;
   color: #666;
   margin-top: 4px;
+}
+
+.player-type {
+  display: block;
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+}
+
+.player-config-section {
+  background: #fff;
+  border: 2px solid #8b4513;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+  text-align: left;
+}
+
+.player-config-section h3 {
+  margin: 0 0 12px 0;
+  color: #8b4513;
+}
+
+.player-config-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.player-config-item:last-child {
+  border-bottom: none;
+}
+
+.ai-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.ai-toggle input {
+  cursor: pointer;
 }
 
 .start-btn {
