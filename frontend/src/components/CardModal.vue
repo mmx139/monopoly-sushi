@@ -10,6 +10,25 @@
       </div>
       <p v-else class="card-question">{{ (card as QuizCard).question }}</p>
 
+      <!-- 诗词背诵显示，不需输入 -->
+      <div v-if="card?.type === 'quiz'" class="answer-section">
+        <input
+          v-model="userAnswer"
+          type="text"
+          class="answer-input"
+          placeholder="请输入答案"
+          :disabled="answered"
+        >
+        <button
+          v-if="!answered"
+          class="card-btn submit"
+          @click="submitAnswer"
+          :disabled="!userAnswer.trim()"
+        >
+          提交答案
+        </button>
+      </div>
+
       <div class="card-hint">
         <span v-if="card.type === 'poetry'">背诵正确 +{{ (card as PoetryCard).reward }}，错误 -{{ (card as PoetryCard).penalty }}</span>
         <span v-else>回答正确 +{{ (card as QuizCard).reward }}</span>
@@ -43,6 +62,7 @@ const emit = defineEmits<{
 const answered = ref(false)
 const result = ref(false)
 const reward = ref(0)
+const userAnswer = ref('')
 
 watch(() => props.show, (newVal) => {
   if (newVal) {
@@ -52,17 +72,33 @@ watch(() => props.show, (newVal) => {
   }
 })
 
+function submitAnswer() {
+  if (!props.card || props.card.type !== 'quiz') return
+
+  const quizCard = props.card as QuizCard
+  answered.value = true
+
+  // 检查答案是否正确（忽略空格和标点）
+  const correct = userAnswer.value.trim() === quizCard.answer.trim()
+  result.value = correct
+
+  if (correct) {
+    reward.value = quizCard.reward
+  } else {
+    reward.value = 0
+  }
+
+  emit('answer', correct)
+}
+
+// 诗词无需输入答案，玩家直接选择正确/错误
 function onAnswer(correct: boolean) {
   answered.value = true
   result.value = correct
   if (correct) {
-    reward.value = props.card?.type === 'poetry'
-      ? (props.card as PoetryCard).reward
-      : (props.card as QuizCard).reward
+    reward.value = (props.card as PoetryCard).reward
   } else {
-    reward.value = props.card?.type === 'poetry'
-      ? -(props.card as PoetryCard).penalty
-      : 0
+    reward.value = -(props.card as PoetryCard).penalty
   }
   emit('answer', correct)
 }
@@ -125,6 +161,43 @@ function onClose() {
   font-size: 18px;
   color: #333;
   margin: 16px 0;
+}
+
+.answer-section {
+  margin: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.answer-input {
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
+  border: 2px solid #8b4513;
+  border-radius: 8px;
+  font-family: 'Noto Serif SC', serif;
+  text-align: center;
+}
+
+.answer-input:disabled {
+  background: #f5f5f5;
+}
+
+.card-btn.submit {
+  background: #2196f3;
+  border-color: #1976d2;
+  color: #fff;
+}
+
+.card-btn.submit:hover:not(:disabled) {
+  background: #42a5f5;
+}
+
+.card-btn.submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .card-hint {

@@ -85,6 +85,8 @@ function drawBoard() {
 
   const availableSize = boardSize - padding * 2
   const gridSize = availableSize / 18
+  const centerX = padding + availableSize / 2
+  const centerY = padding + availableSize / 2
 
   console.log(`Drawing board: size=${boardSize}, padding=${padding}, gridSize=${gridSize}`)
   console.log(`BOARD_TEMPLATES length: ${BOARD_TEMPLATES.length}`)
@@ -159,6 +161,78 @@ function drawBoard() {
       ctx.stroke()
     }
   }
+
+  // 绘制中间区域
+  drawCenterArea(ctx, centerX, centerY, gridSize)
+}
+
+function drawCenterArea(ctx: CanvasRenderingContext2D, centerX: number, centerY: number, gridSize: number) {
+  // 中间区域尺寸
+  const cardWidth = gridSize * 2
+  const cardHeight = gridSize * 1.5
+  const cardGap = gridSize * 0.3
+
+  // 卡堆颜色
+  const cardColors: Record<string, string> = {
+    quiz: '#ffb6c1',      // 问答卡 - 浅红
+    poetry: '#ffd700',     // 诗词卡 - 金色
+    item: '#87ceeb',       // 道具卡 - 浅蓝
+    punishment: '#d3d3d3', // 惩罚卡 - 浅灰
+    reward: '#90EE90'      // 奖励卡 - 浅绿
+  }
+
+  // 卡堆配置
+  const cardStacks = [
+    { type: 'quiz', name: '问答卡', x: -cardWidth - cardGap, y: -cardHeight - cardGap },
+    { type: 'poetry', name: '诗词卡', x: 0, y: -cardHeight - cardGap },
+    { type: 'item', name: '道具卡', x: cardWidth + cardGap, y: -cardHeight - cardGap },
+    { type: 'punishment', name: '惩罚卡', x: -cardWidth - cardGap, y: 0 },
+    { type: 'reward', name: '奖励卡', x: cardWidth + cardGap, y: 0 }
+  ]
+
+  // 绘制每个卡堆
+  for (const stack of cardStacks) {
+    const x = centerX + stack.x
+    const y = centerY + stack.y
+    const color = cardColors[stack.type] || '#fff'
+
+    // 绘制卡片背景
+    ctx.fillStyle = color
+    ctx.fillRect(x, y, cardWidth, cardHeight)
+
+    // 卡片边框
+    ctx.strokeStyle = '#8b4513'
+    ctx.lineWidth = 2
+    ctx.strokeRect(x, y, cardWidth, cardHeight)
+
+    // 卡片名称
+    ctx.fillStyle = '#333'
+    ctx.font = 'bold 12px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(stack.name, x + cardWidth / 2, y + cardHeight / 2)
+
+    // 绘制堆叠效果（3张卡片偏移）
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'
+    for (let i = 1; i <= 3; i++) {
+      ctx.fillRect(x + i * 2, y - i * 2, cardWidth, cardHeight)
+    }
+  }
+
+  // 绘制货币图标（中央）
+  ctx.fillStyle = '#ffd700'
+  ctx.beginPath()
+  ctx.arc(centerX, centerY, gridSize * 0.8, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.strokeStyle = '#8b4513'
+  ctx.lineWidth = 3
+  ctx.stroke()
+
+  ctx.fillStyle = '#333'
+  ctx.font = 'bold 16px sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('💰', centerX, centerY)
 }
 
 onMounted(() => {
