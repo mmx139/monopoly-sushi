@@ -17,13 +17,13 @@ const props = defineProps<{
 }>()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
-const boardSize = 600
+const boardSize = 900
 const padding = 50
 
 // 格子颜色配置（基于 001_game_rules.md）
 const TILE_COLORS: Record<string, string> = {
   start: '#98fb98',        // 起点 - 浅绿
-  property: '#ffe4b5',      // 可购地皮 - 米色
+  property: '#90EE90',      // 可购地皮 - 浅绿色
   special: '#dda0dd',       // 特殊事件 - 浅紫
   poetry: '#ffd700',        // 诗词事件 - 橙色
   quiz: '#ffb6c1',         // 问答事件 - 浅红
@@ -111,14 +111,14 @@ function drawBoard() {
 
     // 格子编号（右上角，小字）
     ctx.fillStyle = '#666'
-    ctx.font = '8px sans-serif'
+    ctx.font = '10px sans-serif'
     ctx.textAlign = 'right'
     ctx.textBaseline = 'top'
-    ctx.fillText(String(i), pos.x + gridSize - 4, pos.y + 2)
+    ctx.fillText(String(tile.id), pos.x + gridSize - 4, pos.y + 2)
 
     // 格子名称（居中，中等字）
     ctx.fillStyle = '#333'
-    ctx.font = 'bold 9px sans-serif'
+    ctx.font = 'bold 12px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
 
@@ -127,8 +127,8 @@ function drawBoard() {
       ctx.fillText(name, pos.x + gridSize / 2, pos.y + gridSize / 2)
     } else {
       const mid = Math.floor(name.length / 2)
-      ctx.fillText(name.substring(0, mid), pos.x + gridSize / 2, pos.y + gridSize / 2 - 5)
-      ctx.fillText(name.substring(mid), pos.x + gridSize / 2, pos.y + gridSize / 2 + 5)
+      ctx.fillText(name.substring(0, mid), pos.x + gridSize / 2, pos.y + gridSize / 2 - 6)
+      ctx.fillText(name.substring(mid), pos.x + gridSize / 2, pos.y + gridSize / 2 + 6)
     }
   }
 
