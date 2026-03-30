@@ -146,44 +146,58 @@ export const useGameStore = defineStore('game', () => {
       case 'special': {
         // 特殊事件
         const effect = tile.effect || ''
-        if (tile.name.includes('丧母') || tile.name.includes('丧父') || tile.name.includes('通判')) {
+        const desc = tile.description || ''
+
+        // 丧母/丧父/通判 - 停留3回合
+        if (desc.includes('丧母') || desc.includes('丧父') || desc.includes('通判')) {
           player.stayTurns = 3
           message.value = `${player.name} ${tile.name}，原地停留3回合`
-        } else if (tile.name.includes('王安石变法')) {
+          autoEndTurnWithStay()
+        } else if (desc.includes('王安石变法')) {
           player.money -= 1000
           message.value = `${player.name} 遭受王安石变法，失去 1000`
-        } else if (tile.name.includes('乌台诗案')) {
-          const loseMoney = Math.max(0, player.money - 1000)
-          player.money = Math.max(1000, player.money - loseMoney)
-          if (player.money < 1000) {
+          autoEndTurn()
+        } else if (desc.includes('乌台诗案')) {
+          // 乌台诗案 - 资产扣除到1000
+          if (player.money <= 1000) {
             player.isBankrupt = true
             message.value = `${player.name} 乌台诗案，资产不足1000，破产！`
+            transferProperties(player.id, getNextPlayerId())
           } else {
+            player.money = 1000
             message.value = `${player.name} 乌台诗案，资产扣除到 1000`
           }
-        } else if (tile.name.includes('入土为安')) {
+          autoEndTurn()
+        } else if (desc.includes('入土为安')) {
           // 获得墓碑卡（待实现道具系统）
           message.value = `${player.name} ${tile.name}，获得墓碑卡`
-        } else if (tile.name.includes('兄弟团聚')) {
+          autoEndTurn()
+        } else if (desc.includes('兄弟团聚')) {
           // 获得花束卡
-          message.value = `${player.name} ${player.name} ${tile.name}，获得花束卡`
-        } else if (tile.name.includes('追赠太师') || tile.name.includes('谥号')) {
+          message.value = `${player.name} ${tile.name}，获得花束卡`
+          autoEndTurn()
+        } else if (desc.includes('追赠太师') || desc.includes('谥号')) {
           // 抽2张道具卡（待实现）
           message.value = `${player.name} ${tile.name}，抽2张道具卡`
-        } else if (tile.name.includes('连续五贬')) {
+          autoEndTurn()
+        } else if (desc.includes('连续五贬')) {
           // 抽5张惩罚卡（待实现）
           message.value = `${player.name} ${tile.name}，抽5张惩罚卡`
-        } else if (tile.name.includes('眉州') || tile.name.includes('汴京') || tile.name.includes('湖州') || tile.name.includes('常州')) {
-          // 起点格 - 停留效果
+          autoEndTurn()
+        } else if (desc.includes('原地停留')) {
+          // 通用停留效果
           const stayMatch = effect.match(/原地停留(\d+)回合/)
           if (stayMatch) {
             player.stayTurns = parseInt(stayMatch[1])
+            message.value = `${player.name} ${tile.name}，原地停留${player.stayTurns}回合`
+          } else {
+            message.value = `${player.name} 来到了 ${tile.name}`
           }
-          message.value = `${player.name} 来到了 ${tile.name}`
+          autoEndTurnWithStay()
         } else {
           message.value = `${player.name} 来到了 ${tile.name}`
+          autoEndTurn()
         }
-        autoEndTurn()
         break
       }
       case 'quiz': {
@@ -252,9 +266,42 @@ export const useGameStore = defineStore('game', () => {
     // 如果当前玩家破产，跳过
     if (currentPlayer.value?.isBankrupt) {
       skipBankruptPlayer()
-    } else {
-      gameState.value.phase = 'action'
+    } else if (!pendingAction.value) {
+      // 没有待处理动作，自动进入下一玩家
+      endTurn()
     }
+    // 有待处理动作时，保持 action 阶段让玩家选择
+  }
+
+  // 自动结束回合并停留（下回合跳过投骰子）
+  function autoEndTurnWithStay() {
+    // 检查是否只剩一个玩家
+    const activePlayers = gameState.value.players.filter(p => !p.isBankrupt)
+    if (activePlayers.length <= 1) {
+      gameState.value.winner = activePlayers[0]?.id || null
+      gameState.value.phase = 'ending'
+      message.value = `游戏结束！胜利者：${activePlayers[0]?.name}`
+      return
+    }
+
+    // 如果当前玩家破产，跳过
+    if (currentPlayer.value?.isBankrupt) {
+      skipBankruptPlayer()
+    } else {
+      // 直接进入下一玩家（停留效果已在movePlayer中设置）
+      endTurn()
+    }
+  }
+
+  // 获取下一个玩家ID（用于破产时转移地皮）
+  function getNextPlayerId(): string {
+    let nextIndex = (gameState.value.currentPlayerIndex + 1) % gameState.value.players.length
+    let attempts = 0
+    while (gameState.value.players[nextIndex].isBankrupt && attempts < gameState.value.players.length) {
+      nextIndex = (nextIndex + 1) % gameState.value.players.length
+      attempts++
+    }
+    return gameState.value.players[nextIndex]?.id || ''
   }
 
   // 跳过破产玩家
@@ -369,6 +416,26 @@ export const useGameStore = defineStore('game', () => {
 
     gameState.value.phase = 'rolling'
     lastDiceResult.value = null
+
+    // 检查是否需要跳过（停留或破产）
+    checkAndSkipPlayer()
+  }
+
+  // 检查并跳过无法行动的玩家
+  function checkAndSkipPlayer() {
+    const player = currentPlayer.value
+    if (!player) return
+
+    // 停留玩家 - 自动跳过
+    if (player.stayTurns > 0) {
+      player.stayTurns--
+      message.value = `${player.name} 停留 ${player.stayTurns + 1} 回合结束，自动进入下一玩家`
+      // 延迟一下让UI更新
+      setTimeout(() => {
+        endTurn()
+      }, 100)
+      return
+    }
   }
 
   // 获取当前位置信息

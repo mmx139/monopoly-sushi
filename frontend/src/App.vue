@@ -77,7 +77,7 @@
           <Dice
             v-else
             :value="lastDiceResult?.value || null"
-            :canRoll="gameState.phase === 'rolling' && currentPlayer && !currentPlayer.isAI"
+            :canRoll="gameState.phase === 'rolling' && currentPlayer && !currentPlayer.isAI && !isStaying"
             @roll="onRoll"
           />
 
@@ -134,6 +134,10 @@ const winnerName = computed(() => {
 })
 
 const currentTile = computed(() => store.getCurrentTile())
+
+const isStaying = computed(() => {
+  return currentPlayer.value?.stayTurns > 0 || false
+})
 
 function toggleCharacter(charId: string) {
   const index = selectedCharacters.value.indexOf(charId)
