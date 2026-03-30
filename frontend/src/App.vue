@@ -24,6 +24,13 @@
       </button>
     </div>
 
+    <!-- 游戏结束 -->
+    <div v-else-if="gameState.phase === 'ending'" class="ending-screen">
+      <h2>游戏结束</h2>
+      <p class="winner-text">{{ winnerName }} 获胜！</p>
+      <button class="start-btn" @click="resetGame">再来一局</button>
+    </div>
+
     <!-- 游戏进行中 -->
     <div v-else class="game-screen">
       <div class="game-sidebar">
@@ -31,6 +38,26 @@
           :players="gameState.players"
           :currentPlayerId="currentPlayer?.id || null"
         />
+
+        <!-- 玩家拥有的地皮列表 -->
+        <div v-if="currentPlayer && currentPlayer.properties.length > 0" class="owned-properties">
+          <h4>{{ currentPlayer.name }} 的地皮</h4>
+          <div
+            v-for="propId in currentPlayer.properties"
+            :key="propId"
+            class="property-item"
+          >
+            <span>{{ getPropertyName(propId) }}</span>
+            <span class="house-level">Lv.{{ getPropertyLevel(propId) }}</span>
+            <button
+              v-if="getPropertyLevel(propId) < 3"
+              class="upgrade-btn"
+              @click="onUpgrade(propId)"
+            >
+              升级
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="game-main">
@@ -38,6 +65,11 @@
           :players="gameState.players"
           :currentPlayerId="currentPlayer?.id || null"
         />
+
+        <!-- 消息显示 -->
+        <div v-if="message" class="message-bar">
+          {{ message }}
+        </div>
 
         <div class="action-bar">
           <Dice
@@ -49,6 +81,9 @@
           <div v-if="currentTile" class="current-tile-info">
             <strong>{{ currentTile.name }}</strong>
             <span v-if="currentTile.description"> - {{ currentTile.description }}</span>
+            <span v-if="currentTile.type === 'property'" class="toll-info">
+              [过路费: {{ getToll(currentTile.id) }}]
+            </span>
           </div>
 
           <div class="action-buttons" v-if="gameState.phase === 'action' && currentPlayer && !currentPlayer.isAI">
@@ -64,9 +99,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useGameStore } from './stores/game'
-import { CHARACTERS } from '../shared/constants'
-import { BOARD } from '../shared/board'
-import { getProperties } from '../shared/board'
+import { CHARACTERS, HOUSE_TOLLS } from '@shared/constants'
+import { getPropertyById } from '@shared/board'
 import GameBoard from './components/GameBoard.vue'
 import Dice from './components/Dice.vue'
 import PlayerPanel from './components/PlayerPanel.vue'
@@ -78,17 +112,21 @@ const selectedCharacters = ref<string[]>([])
 const gameState = computed(() => store.gameState)
 const currentPlayer = computed(() => store.currentPlayer)
 const lastDiceResult = computed(() => store.lastDiceResult)
+const message = computed(() => store.message)
 
-const currentTile = computed(() => {
-  if (!currentPlayer.value) return null
-  return BOARD[currentPlayer.value.position]
+const winnerName = computed(() => {
+  if (!gameState.value.winner) return ''
+  const winner = gameState.value.players.find(p => p.id === gameState.value.winner)
+  return winner?.name || ''
 })
+
+const currentTile = computed(() => store.getCurrentTile())
 
 const canBuy = computed(() => {
   if (!currentPlayer.value || !currentTile.value) return false
   if (currentTile.value.type !== 'property') return false
 
-  const property = getProperties().find(p => p.id === currentTile.value!.id)
+  const property = getPropertyById(gameState.value.board, currentTile.value.id)
   if (!property || property.ownerId) return false
 
   return currentPlayer.value.money >= property.basePrice
@@ -116,6 +154,11 @@ function startGame() {
   store.initGame(configs)
 }
 
+function resetGame() {
+  gameState.value.phase = 'waiting'
+  selectedCharacters.value = []
+}
+
 function onRoll() {
   const result = store.rollDice()
   if (result.value) {
@@ -130,8 +173,28 @@ function onBuy() {
   }
 }
 
+function onUpgrade(propertyId: number) {
+  if (!currentPlayer.value) return
+  store.upgradeProperty(currentPlayer.value.id, propertyId)
+}
+
 function onEndTurn() {
   store.endTurn()
+}
+
+function getPropertyName(propertyId: number): string {
+  const prop = getPropertyById(gameState.value.board, propertyId)
+  return prop?.name || `地皮${propertyId}`
+}
+
+function getPropertyLevel(propertyId: number): number {
+  const prop = getPropertyById(gameState.value.board, propertyId)
+  return prop?.houseLevel || 0
+}
+
+function getToll(propertyId: number): number {
+  const prop = getPropertyById(gameState.value.board, propertyId)
+  return prop ? HOUSE_TOLLS[prop.houseLevel] || 0 : 0
 }
 </script>
 
@@ -226,6 +289,17 @@ header h1 {
   cursor: not-allowed;
 }
 
+.ending-screen {
+  max-width: 400px;
+  margin: 100px auto;
+}
+
+.winner-text {
+  font-size: 24px;
+  color: #8b4513;
+  margin: 20px 0;
+}
+
 .game-screen {
   display: flex;
   gap: 20px;
@@ -237,12 +311,64 @@ header h1 {
   flex-shrink: 0;
 }
 
+.owned-properties {
+  background: #fff;
+  border: 2px solid #8b4513;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 12px;
+  text-align: left;
+}
+
+.owned-properties h4 {
+  margin: 0 0 8px 0;
+  color: #8b4513;
+}
+
+.property-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.property-item:last-child {
+  border-bottom: none;
+}
+
+.house-level {
+  font-size: 12px;
+  color: #ff9800;
+}
+
+.upgrade-btn {
+  margin-left: auto;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: #ff9800;
+  border: 1px solid #f57c00;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+}
+
 .game-main {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
+}
+
+.message-bar {
+  background: #fff3e0;
+  border: 2px solid #ff9800;
+  border-radius: 8px;
+  padding: 12px 20px;
+  color: #333;
+  font-size: 16px;
+  width: 100%;
 }
 
 .action-bar {
@@ -264,6 +390,12 @@ header h1 {
   background: #fff8e7;
   border-radius: 6px;
   color: #333;
+}
+
+.toll-info {
+  color: #ff6600;
+  font-size: 12px;
+  margin-left: 8px;
 }
 
 .action-buttons {

@@ -22,7 +22,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Player } from '../../../shared/types'
+import type { Player } from '@shared/types'
 
 const props = defineProps<{
   players: Player[]

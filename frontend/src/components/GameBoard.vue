@@ -8,8 +8,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
-import { BOARD } from '../../../shared/board'
-import type { Player } from '../../../shared/types'
+import { BOARD_TEMPLATES } from '@shared/board'
+import type { Player } from '@shared/types'
 
 const props = defineProps<{
   players: Player[]
@@ -74,9 +74,9 @@ function drawBoard() {
   // 绘制72格
   const gridSize = (boardSize - padding * 2) / 17
 
-  for (let i = 0; i < BOARD.length; i++) {
+  for (let i = 0; i < BOARD_TEMPLATES.length; i++) {
     const pos = getTilePosition(i)
-    const tile = BOARD[i]
+    const tile = BOARD_TEMPLATES[i]
 
     // 格子背景色
     let bgColor = '#fff8e7'
