@@ -4,6 +4,7 @@ import { ref, computed } from 'vue'
 import { BOARD_TEMPLATES, createBoard, getProperties, getPropertyById } from '@shared/board'
 import { INITIAL_MONEY, BOARD_SIZE, HOUSE_TOLLS, HOUSE_UPGRADE_PRICE } from '@shared/constants'
 import type { Player, GameState, Tile, DiceResult, Property } from '@shared/types'
+import { aiMakeDecision } from './ai'
 
 export const useGameStore = defineStore('game', () => {
   // 状态
@@ -445,6 +446,49 @@ export const useGameStore = defineStore('game', () => {
     return gameState.value.board[player.position]
   }
 
+  // AI回合处理
+  function takeAITurn() {
+    const player = currentPlayer.value
+    if (!player || !player.isAI) return
+
+    // AI延迟思考后投骰子
+    setTimeout(() => {
+      if (gameState.value.phase !== 'rolling') return
+
+      const result = rollDice()
+      if (result.value) {
+        movePlayer(result.value)
+        // 移动后如果需要AI决策，进入AI决策流程
+        if (gameState.value.phase === 'action' && pendingAction.value) {
+          aiHandleAction()
+        }
+      }
+    }, 1000)
+  }
+
+  // AI处理待定动作（购买/升级）
+  function aiHandleAction() {
+    const player = currentPlayer.value
+    if (!player || !player.isAI) return
+
+    const currentTile = getCurrentTile()
+    const decision = aiMakeDecision(player, currentTile, player.money)
+
+    setTimeout(() => {
+      if (decision === 'buy' && pendingAction.value === 'buy') {
+        if (currentTile && currentTile.type === 'property') {
+          purchaseProperty(player.id, currentTile.id)
+        }
+      } else if (decision === 'upgrade' && pendingAction.value === 'upgrade') {
+        if (currentTile && currentTile.type === 'property') {
+          upgradeProperty(player.id, currentTile.id)
+        }
+      } else {
+        skipAction()
+      }
+    }, 800)
+  }
+
   return {
     gameState,
     currentPlayer,
@@ -460,6 +504,8 @@ export const useGameStore = defineStore('game', () => {
     skipAction,
     endTurn,
     getCurrentTile,
-    getBoardProperties
+    getBoardProperties,
+    takeAITurn,
+    aiHandleAction
   }
 })

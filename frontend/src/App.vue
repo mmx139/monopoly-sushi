@@ -103,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useGameStore } from './stores/game'
 import { CHARACTERS, HOUSE_TOLLS } from '@shared/constants'
 import { getPropertyById } from '@shared/board'
@@ -114,6 +114,13 @@ import PlayerPanel from './components/PlayerPanel.vue'
 const store = useGameStore()
 
 const selectedCharacters = ref<string[]>([])
+
+// AI回合自动触发
+watch(() => gameState.value.phase, (phase) => {
+  if (phase === 'rolling' && currentPlayer.value?.isAI) {
+    store.takeAITurn()
+  }
+})
 
 const gameState = computed(() => store.gameState)
 const currentPlayer = computed(() => store.currentPlayer)
