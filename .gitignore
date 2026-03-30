@@ -33,3 +33,4 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+docs/requirements/sushi.pptx
