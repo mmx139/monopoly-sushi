@@ -116,20 +116,16 @@ function drawBoard() {
     ctx.textBaseline = 'top'
     ctx.fillText(String(tile.id), pos.x + gridSize - 4, pos.y + 2)
 
-    // 格子名称（居中，中等字）
+    // 格子名称（居中，2行显示）
     ctx.fillStyle = '#333'
-    ctx.font = 'bold 12px sans-serif'
+    ctx.font = 'bold 11px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
 
     const name = tile.name
-    if (name.length <= 4) {
-      ctx.fillText(name, pos.x + gridSize / 2, pos.y + gridSize / 2)
-    } else {
-      const mid = Math.floor(name.length / 2)
-      ctx.fillText(name.substring(0, mid), pos.x + gridSize / 2, pos.y + gridSize / 2 - 6)
-      ctx.fillText(name.substring(mid), pos.x + gridSize / 2, pos.y + gridSize / 2 + 6)
-    }
+    const mid = Math.floor(name.length / 2)
+    ctx.fillText(name.substring(0, mid), pos.x + gridSize / 2, pos.y + gridSize / 2 - 5)
+    ctx.fillText(name.substring(mid), pos.x + gridSize / 2, pos.y + gridSize / 2 + 5)
   }
 
   // 绘制玩家位置
@@ -180,7 +176,8 @@ watch(() => [props.players, props.currentPlayerId], () => {
 .board-container {
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
+  margin-top: 0;
 }
 
 .board {

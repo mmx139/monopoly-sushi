@@ -33,26 +33,6 @@
 
     <!-- 游戏进行中 -->
     <div v-else class="game-screen">
-      <div class="game-sidebar">
-        <PlayerPanel
-          :players="gameState.players"
-          :currentPlayerId="currentPlayer?.id || null"
-        />
-
-        <!-- 玩家拥有的地皮列表 -->
-        <div v-if="currentPlayer && currentPlayer.properties.length > 0" class="owned-properties">
-          <h4>{{ currentPlayer.name }} 的地皮</h4>
-          <div
-            v-for="propId in currentPlayer.properties"
-            :key="propId"
-            class="property-item"
-          >
-            <span>{{ getPropertyName(propId) }}</span>
-            <span class="house-level">Lv.{{ getPropertyLevel(propId) }}</span>
-          </div>
-        </div>
-      </div>
-
       <div class="game-main">
         <GameBoard
           :players="gameState.players"
@@ -96,6 +76,26 @@
           >
             结束回合
           </button>
+        </div>
+      </div>
+
+      <div class="game-sidebar">
+        <PlayerPanel
+          :players="gameState.players"
+          :currentPlayerId="currentPlayer?.id || null"
+        />
+
+        <!-- 玩家拥有的地皮列表 -->
+        <div v-if="currentPlayer && currentPlayer.properties.length > 0" class="owned-properties">
+          <h4>{{ currentPlayer.name }} 的地皮</h4>
+          <div
+            v-for="propId in currentPlayer.properties"
+            :key="propId"
+            class="property-item"
+          >
+            <span>{{ getPropertyName(propId) }}</span>
+            <span class="house-level">Lv.{{ getPropertyLevel(propId) }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -322,6 +322,7 @@ header h1 {
 .game-sidebar {
   width: 280px;
   flex-shrink: 0;
+  order: 1;
 }
 
 .owned-properties {

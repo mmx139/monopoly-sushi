@@ -2,19 +2,18 @@
 
 ## 状态说明
 
-| 状态 | 含义 | 何时使用 |
-|------|------|----------|
-| **Open** | 待处理 | 发现bug，尚未开始修复 |
-| **In Progress** | 修复中 | 正在修复中 |
-| **Pending on Verify** | 待验证 | 修复完成，等待用户测试验证 |
-| **Pending Develop** | 待开发 | 该功能已知未实现，属于规划中的功能，非bug |
-| **Fixed** | 已修复 | 用户确认验证通过 |
-| **Won't Fix** | 不修复 | 不是问题或无法复现 |
+| 状态 | 含义 | 何时使用 | 谁可以定义这个状态 |
+|------|------|----------|--------------|
+| **Open** | 待处理 | 发现bug，尚未开始修复 | 用户 |
+| **Pending on Verify** | 待验证 | 修复完成，等待用户测试验证 | Claude Code |
+| **Pending Develop** | 待开发 | 该功能已知未实现，属于规划中的功能，非bug | Claude Code |
+| **Fixed** | 已修复 | 用户确认验证通过 | 用户 |
+| **Won't Fix** | 不修复 | 不是问题或无法复现 | Claude Code |
 
 ## 状态转换
 
 ```
-Open → In Progress → Fixed/Pending on Verify
+Open → Pending on Verify → Fixed/
                          ↓
                      用户确认:
                      ✓ 通过 → Fixed
@@ -36,6 +35,6 @@ Open → Won't Fix (确认非问题)
 
 ## 注意事项
 
-- 修复者只更新修复时间和根因，不改变状态
+- 对于Fixed状态的bug，修复者只更新修复时间和根因，不改变状态
 - 只有用户可以改为 Fixed
 - Pending on Verify 状态下如果用户测试不通过，改为 Open 并重新分配
