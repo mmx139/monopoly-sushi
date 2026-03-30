@@ -145,6 +145,12 @@ const store = useGameStore()
 const selectedCharacters = ref<string[]>([])
 const playerConfigs = ref<Record<string, { isAI: boolean }>>({})
 
+const gameState = computed(() => store.gameState)
+const currentPlayer = computed(() => store.currentPlayer)
+const lastDiceResult = computed(() => store.lastDiceResult)
+const message = computed(() => store.message)
+const pendingAction = computed(() => store.pendingAction)
+
 // AI回合自动触发
 watch(() => gameState.value.phase, (phase) => {
   if (phase === 'rolling' && currentPlayer.value?.isAI) {
@@ -157,12 +163,6 @@ watch(() => gameState.value.phase, (phase) => {
     }, 1000)
   }
 })
-
-const gameState = computed(() => store.gameState)
-const currentPlayer = computed(() => store.currentPlayer)
-const lastDiceResult = computed(() => store.lastDiceResult)
-const message = computed(() => store.message)
-const pendingAction = computed(() => store.pendingAction)
 
 const actionHint = computed(() => {
   if (pendingAction.value === 'buy') return '是否购买此地皮？'
