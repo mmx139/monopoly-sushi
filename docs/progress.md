@@ -27,6 +27,7 @@ Phase 2: 游戏核心开发
 
 ### 前端 (Vue3 + Pinia)
 - [x] `frontend/src/stores/game.ts` - Pinia 游戏状态管理
+- [x] `frontend/src/stores/ai.ts` - AI决策逻辑
 - [x] `frontend/src/components/Dice.vue` - 骰子组件
 - [x] `frontend/src/components/GameBoard.vue` - Canvas 棋盘渲染
 - [x] `frontend/src/components/PlayerPanel.vue` - 玩家信息面板
@@ -37,8 +38,7 @@ Phase 2: 游戏核心开发
 - [x] `backend/main.py` - FastAPI 主入口
 
 ## 进行中
-- [ ] 完善地皮购买/升级逻辑
-- [ ] AI 玩家基础实现
+- [ ] AI玩家UI选择支持
 - [ ] WebSocket 多人联机
 
 ## 待办
@@ -52,9 +52,9 @@ Phase 2: 游戏核心开发
 - [ ] 胜利判定
 
 ### P1 功能
-- [ ] 房屋升级系统
-- [ ] 过路费系统
-- [ ] AI 玩家
+- [x] 房屋升级系统
+- [x] 过路费系统
+- [x] AI 玩家（基础实现）
 - [ ] 问答卡/诗词卡
 
 ### P2 联机
@@ -66,4 +66,4 @@ Phase 2: 游戏核心开发
 （暂无）
 
 ## 最后更新
-2026-03-30
+2026-03-31
