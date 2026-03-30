@@ -18,6 +18,7 @@ const props = defineProps<{
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const boardSize = 600
+const padding = 50
 
 // 格子颜色配置（基于 001_game_rules.md）
 const TILE_COLORS: Record<string, string> = {
@@ -32,53 +33,61 @@ const TILE_COLORS: Record<string, string> = {
 }
 
 // 棋盘格子位置计算（正方形，4边）
+// 每边18格（包含边角），外圈68格 + 内圈4个边角 = 72
 function getTilePosition(tileIndex: number): { x: number; y: number } {
-  const padding = 50
   const availableSize = boardSize - padding * 2
-  const gridSize = availableSize / 18  // 18格一边（包含边角）
+  const gridSize = availableSize / 18  // 18格一边
 
-  // 0-17: 左边往上 (左下角起点，0在左下角)
+  // 0-17: 左边往上 (左下角起点0，到左上角17)
   if (tileIndex <= 17) {
     return {
       x: padding,
-      y: boardSize - padding - tileIndex * gridSize
+      y: boardSize - padding - (tileIndex + 1) * gridSize
     }
   }
-  // 18-35: 上边往右 (左上角18到右上角35)
+  // 18-35: 上边往右 (左上角18，到右上角35)
   if (tileIndex <= 35) {
     return {
-      x: padding + (tileIndex - 18) * gridSize,
+      x: padding + (tileIndex - 18 + 1) * gridSize,
       y: padding
     }
   }
-  // 36-53: 右边往下 (右上角36到右下角53)
+  // 36-53: 右边往下 (右上角36，到右下角53)
   if (tileIndex <= 53) {
     return {
       x: boardSize - padding,
-      y: padding + (tileIndex - 36) * gridSize
+      y: padding + (tileIndex - 36 + 1) * gridSize
     }
   }
-  // 54-71: 下边往左 (右下角54到左下角71，71的右边是0)
+  // 54-71: 下边往左 (右下角54，到左下角71)
   return {
-    x: boardSize - padding - (tileIndex - 54) * gridSize,
+    x: boardSize - padding - (tileIndex - 54 + 1) * gridSize,
     y: boardSize - padding
   }
 }
 
 function drawBoard() {
   const canvas = canvasRef.value
-  if (!canvas) return
+  if (!canvas) {
+    console.log('Canvas not found')
+    return
+  }
 
   const ctx = canvas.getContext('2d')
-  if (!ctx) return
+  if (!ctx) {
+    console.log('Context not found')
+    return
+  }
 
   // 清空画布
   ctx.fillStyle = '#f5e6d3'
   ctx.fillRect(0, 0, boardSize, boardSize)
 
-  const padding = 50
   const availableSize = boardSize - padding * 2
   const gridSize = availableSize / 18
+
+  console.log(`Drawing board: size=${boardSize}, padding=${padding}, gridSize=${gridSize}`)
+  console.log(`BOARD_TEMPLATES length: ${BOARD_TEMPLATES.length}`)
 
   // 绘制外框
   ctx.strokeStyle = '#8b4513'
@@ -93,40 +102,35 @@ function drawBoard() {
     // 格子背景色
     const bgColor = TILE_COLORS[tile.type] || '#fff8e7'
     ctx.fillStyle = bgColor
-    ctx.fillRect(pos.x, pos.y, gridSize, gridSize)
+    ctx.fillRect(pos.x, pos.y, gridSize - 2, gridSize - 2)  // 减2让格子之间有缝隙
 
     // 格子边框
     ctx.strokeStyle = '#8b4513'
     ctx.lineWidth = 1
-    ctx.strokeRect(pos.x, pos.y, gridSize, gridSize)
+    ctx.strokeRect(pos.x, pos.y, gridSize - 2, gridSize - 2)
 
     // 格子编号（右上角，小字）
     ctx.fillStyle = '#666'
     ctx.font = '8px sans-serif'
     ctx.textAlign = 'right'
     ctx.textBaseline = 'top'
-    ctx.fillText(String(i), pos.x + gridSize - 2, pos.y + 2)
+    ctx.fillText(String(i), pos.x + gridSize - 4, pos.y + 2)
 
     // 格子名称（居中，中等字）
     ctx.fillStyle = '#333'
-    ctx.font = 'bold 10px sans-serif'
+    ctx.font = 'bold 9px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
 
-    // 名称换行处理
     const name = tile.name
     if (name.length <= 4) {
       ctx.fillText(name, pos.x + gridSize / 2, pos.y + gridSize / 2)
     } else {
-      // 长名称分成两行
       const mid = Math.floor(name.length / 2)
-      ctx.fillText(name.substring(0, mid), pos.x + gridSize / 2, pos.y + gridSize / 2 - 6)
-      ctx.fillText(name.substring(mid), pos.x + gridSize / 2, pos.y + gridSize / 2 + 6)
+      ctx.fillText(name.substring(0, mid), pos.x + gridSize / 2, pos.y + gridSize / 2 - 5)
+      ctx.fillText(name.substring(mid), pos.x + gridSize / 2, pos.y + gridSize / 2 + 5)
     }
   }
-
-  // 绘制中间区域（待完善：卡堆、货币、房屋）
-  drawCenterArea(ctx)
 
   // 绘制玩家位置
   for (const player of props.players) {
@@ -139,24 +143,21 @@ function drawBoard() {
     }
     const color = charColors[player.characterId] || '#333'
 
-    // 计算玩家在格子内的偏移（同一格子可能多个玩家）
     const playerIndex = props.players.indexOf(player)
     const offsetX = (playerIndex % 2) * 8 - 4
     const offsetY = Math.floor(playerIndex / 2) * 8 - 4
 
-    // 玩家标记
     ctx.beginPath()
-    ctx.arc(pos.x + gridSize / 2 + offsetX, pos.y + gridSize / 2 + offsetY, 10, 0, Math.PI * 2)
+    ctx.arc(pos.x + gridSize / 2 + offsetX, pos.y + gridSize / 2 + offsetY, 8, 0, Math.PI * 2)
     ctx.fillStyle = color
     ctx.fill()
     ctx.strokeStyle = '#fff'
     ctx.lineWidth = 2
     ctx.stroke()
 
-    // 当前玩家光环
     if (player.id === props.currentPlayerId) {
       ctx.beginPath()
-      ctx.arc(pos.x + gridSize / 2 + offsetX, pos.y + gridSize / 2 + offsetY, 14, 0, Math.PI * 2)
+      ctx.arc(pos.x + gridSize / 2 + offsetX, pos.y + gridSize / 2 + offsetY, 12, 0, Math.PI * 2)
       ctx.strokeStyle = '#ffd700'
       ctx.lineWidth = 3
       ctx.stroke()
@@ -164,36 +165,13 @@ function drawBoard() {
   }
 }
 
-function drawCenterArea(ctx: CanvasRenderingContext2D) {
-  const centerX = boardSize / 2
-  const centerY = boardSize / 2
-  const centerSize = boardSize - 100
-
-  // 中心区域背景
-  ctx.fillStyle = '#fff8e7'
-  ctx.fillRect(centerX - centerSize / 2, centerY - centerSize / 2, centerSize, centerSize)
-  ctx.strokeStyle = '#8b4513'
-  ctx.lineWidth = 2
-  ctx.strokeRect(centerX - centerSize / 2, centerY - centerSize / 2, centerSize, centerSize)
-
-  // 中心文字
-  ctx.fillStyle = '#8b4513'
-  ctx.font = '14px sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('一蓑烟雨任平生', centerX, centerY - 20)
-
-  ctx.font = '12px sans-serif'
-  ctx.fillStyle = '#666'
-  ctx.fillText('棋盘中央', centerX, centerY + 10)
-  ctx.fillText('（卡堆/货币待显示）', centerX, centerY + 30)
-}
-
 onMounted(() => {
+  console.log('Board mounted, drawing...')
   drawBoard()
 })
 
 watch(() => [props.players, props.currentPlayerId], () => {
+  console.log('Props changed, redrawing...')
   drawBoard()
 }, { deep: true })
 </script>
