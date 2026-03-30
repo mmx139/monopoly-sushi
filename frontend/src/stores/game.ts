@@ -5,6 +5,8 @@ import { BOARD_TEMPLATES, createBoard, getProperties, getPropertyById } from '@s
 import { INITIAL_MONEY, BOARD_SIZE, HOUSE_TOLLS, HOUSE_UPGRADE_PRICE } from '@shared/constants'
 import type { Player, GameState, Tile, DiceResult, Property } from '@shared/types'
 import { aiMakeDecision } from './ai'
+import { drawQuizCard, drawPoetryCard } from '@shared/cards'
+import type { QuizCard, PoetryCard } from '@shared/cards'
 
 export const useGameStore = defineStore('game', () => {
   // 状态
@@ -20,6 +22,10 @@ export const useGameStore = defineStore('game', () => {
   const lastDiceResult = ref<DiceResult | null>(null)
   const message = ref<string>('')
   const pendingAction = ref<'buy' | 'upgrade' | 'toll' | null>(null)
+
+  // 卡牌相关状态
+  const currentCard = ref<QuizCard | PoetryCard | null>(null)
+  const showCardModal = ref(false)
 
   // 计算属性
   const currentPlayer = computed(() => gameState.value.players[gameState.value.currentPlayerIndex])
@@ -202,24 +208,21 @@ export const useGameStore = defineStore('game', () => {
         break
       }
       case 'quiz': {
-        // 问答事件 - 触发问答（待实现具体题目）
-        // 暂时根据效果字段判断奖励
-        const effect = tile.effect || ''
-        const rewardMatch = effect.match(/回答正确[：:](.+)/)
-        if (rewardMatch) {
-          message.value = `${player.name} 来到了 ${tile.name}，${effect}（问答系统待实现）`
-        } else {
-          message.value = `${player.name} 来到了 ${tile.name}，回答正确+100（问答系统待实现）`
-        }
-        // TODO: 实现问答系统
-        autoEndTurn()
+        // 问答事件 - 抽问答卡
+        const card = drawQuizCard()
+        currentCard.value = card
+        showCardModal.value = true
+        message.value = `${player.name} 来到了 ${tile.name}，请回答问题！`
+        gameState.value.phase = 'card'
         break
       }
       case 'poetry': {
-        // 诗词事件 - 触发诗词（待实现）
-        message.value = `${player.name} 来到了 ${tile.name}（诗词系统待实现）`
-        // TODO: 实现诗词系统
-        autoEndTurn()
+        // 诗词事件 - 抽诗词卡
+        const card = drawPoetryCard()
+        currentCard.value = card
+        showCardModal.value = true
+        message.value = `${player.name} 来到了 ${tile.name}，请背诵诗词！`
+        gameState.value.phase = 'card'
         break
       }
       case 'reward': {
@@ -482,6 +485,42 @@ export const useGameStore = defineStore('game', () => {
     }, 800)
   }
 
+  // 处理卡牌答题结果
+  function handleCardAnswer(correct: boolean) {
+    const player = currentPlayer.value
+    if (!player) return
+
+    let reward = 0
+    if (currentCard.value?.type === 'quiz') {
+      reward = correct ? (currentCard.value as QuizCard).reward : 0
+    } else if (currentCard.value?.type === 'poetry') {
+      reward = correct ? (currentCard.value as PoetryCard).reward : -(currentCard.value as PoetryCard).penalty
+    }
+
+    player.money += reward
+    showCardModal.value = false
+    currentCard.value = null
+
+    if (reward > 0) {
+      message.value = `${player.name} 回答正确，获得 ${reward}！`
+    } else if (reward < 0) {
+      message.value = `${player.name} 回答错误，损失 ${-reward}！`
+    } else {
+      message.value = `${player.name} 回答错误，无奖励无惩罚`
+    }
+
+    gameState.value.phase = 'rolling'
+    setTimeout(() => autoEndTurn(), 500)
+  }
+
+  // 关闭卡牌界面
+  function closeCardModal() {
+    showCardModal.value = false
+    currentCard.value = null
+    gameState.value.phase = 'rolling'
+    autoEndTurn()
+  }
+
   return {
     gameState,
     currentPlayer,
@@ -489,6 +528,8 @@ export const useGameStore = defineStore('game', () => {
     lastDiceResult,
     message,
     pendingAction,
+    showCardModal,
+    currentCard,
     initGame,
     rollDice,
     movePlayer,
@@ -499,6 +540,8 @@ export const useGameStore = defineStore('game', () => {
     getCurrentTile,
     getBoardProperties,
     takeAITurn,
-    aiHandleAction
+    aiHandleAction,
+    handleCardAnswer,
+    closeCardModal
   }
 })

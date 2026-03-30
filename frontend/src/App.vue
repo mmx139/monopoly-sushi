@@ -119,6 +119,14 @@
         </div>
       </div>
     </div>
+
+    <!-- 卡牌弹窗 -->
+    <CardModal
+      :show="showCardModal"
+      :card="currentCard"
+      @close="onCardClose"
+      @answer="onCardAnswer"
+    />
   </div>
 </template>
 
@@ -130,6 +138,7 @@ import { getPropertyById } from '@shared/board'
 import GameBoard from './components/GameBoard.vue'
 import Dice from './components/Dice.vue'
 import PlayerPanel from './components/PlayerPanel.vue'
+import CardModal from './components/CardModal.vue'
 
 const store = useGameStore()
 
@@ -140,6 +149,12 @@ const playerConfigs = ref<Record<string, { isAI: boolean }>>({})
 watch(() => gameState.value.phase, (phase) => {
   if (phase === 'rolling' && currentPlayer.value?.isAI) {
     store.takeAITurn()
+  } else if (phase === 'card' && currentPlayer.value?.isAI) {
+    // AI答题：50%正确率
+    const correct = Math.random() > 0.5
+    setTimeout(() => {
+      store.handleCardAnswer(correct)
+    }, 1000)
   }
 })
 
@@ -166,6 +181,9 @@ const currentTile = computed(() => store.getCurrentTile())
 const isStaying = computed(() => {
   return currentPlayer.value?.stayTurns > 0 || false
 })
+
+const showCardModal = computed(() => store.showCardModal)
+const currentCard = computed(() => store.currentCard)
 
 function toggleCharacter(charId: string) {
   const index = selectedCharacters.value.indexOf(charId)
@@ -234,6 +252,14 @@ function onSkip() {
 
 function onEndTurn() {
   store.endTurn()
+}
+
+function onCardAnswer(correct: boolean) {
+  store.handleCardAnswer(correct)
+}
+
+function onCardClose() {
+  store.closeCardModal()
 }
 
 function getPropertyName(propertyId: number): string {
