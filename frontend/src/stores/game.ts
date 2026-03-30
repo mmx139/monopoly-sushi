@@ -418,24 +418,17 @@ export const useGameStore = defineStore('game', () => {
     gameState.value.phase = 'rolling'
     lastDiceResult.value = null
 
-    // 检查是否需要跳过（停留或破产）
-    checkAndSkipPlayer()
-  }
-
-  // 检查并跳过无法行动的玩家
-  function checkAndSkipPlayer() {
+    // 检查是否需要跳过（停留）
     const player = currentPlayer.value
-    if (!player) return
-
-    // 停留玩家 - 自动跳过
-    if (player.stayTurns > 0) {
+    if (player && player.stayTurns > 0) {
       player.stayTurns--
-      message.value = `${player.name} 停留 ${player.stayTurns + 1} 回合结束，自动进入下一玩家`
-      // 延迟一下让UI更新
+      message.value = `${player.name} 停留中，剩余 ${player.stayTurns} 回合`
+      // 停留玩家直接进入下一回合
       setTimeout(() => {
-        endTurn()
-      }, 100)
-      return
+        if (gameState.value.phase === 'rolling') {
+          endTurn()
+        }
+      }, 500)
     }
   }
 
