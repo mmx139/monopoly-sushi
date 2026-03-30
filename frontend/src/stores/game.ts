@@ -18,6 +18,7 @@ export const useGameStore = defineStore('game', () => {
 
   const lastDiceResult = ref<DiceResult | null>(null)
   const message = ref<string>('')
+  const pendingAction = ref<'buy' | 'upgrade' | 'toll' | null>(null)
 
   // 计算属性
   const currentPlayer = computed(() => gameState.value.players[gameState.value.currentPlayerIndex])
@@ -54,6 +55,7 @@ export const useGameStore = defineStore('game', () => {
     }
 
     message.value = ''
+    pendingAction.value = null
   }
 
   // 投骰子
@@ -73,7 +75,8 @@ export const useGameStore = defineStore('game', () => {
     if (player.stayTurns > 0) {
       player.stayTurns--
       message.value = `${player.name} 停留 ${player.stayTurns + 1} 回合`
-      endTurn()
+      // 停留后自动结束回合
+      autoEndTurn()
       return
     }
 
@@ -90,11 +93,6 @@ export const useGameStore = defineStore('game', () => {
 
     // 处理地皮效果
     handleTileEffect(player, newPos)
-
-    gameState.value.phase = 'action'
-
-    // 检查胜利
-    checkWinner()
   }
 
   // 处理地皮效果
@@ -105,41 +103,175 @@ export const useGameStore = defineStore('game', () => {
       case 'property': {
         const property = tile as Property
         if (property.ownerId && property.ownerId !== player.id) {
-          // 收取过路费
+          // 他人地皮 - 收取过路费
           const toll = HOUSE_TOLLS[property.houseLevel] || 0
-          if (toll > 0 && player.money >= toll) {
-            player.money -= toll
-            const owner = gameState.value.players.find(p => p.id === property.ownerId)
-            if (owner) {
-              owner.money += toll
-              message.value = `${player.name} 支付过路费 ${toll} 给 ${owner.name}`
+          if (toll > 0) {
+            if (player.money >= toll) {
+              player.money -= toll
+              const owner = gameState.value.players.find(p => p.id === property.ownerId)
+              if (owner) {
+                owner.money += toll
+                message.value = `${player.name} 支付过路费 ${toll} 给 ${owner.name}`
+              }
+            } else {
+              // 付不起过路费，破产
+              player.isBankrupt = true
+              message.value = `${player.name} 付不起过路费 ${toll}，破产！`
+              transferProperties(player.id, property.ownerId!)
             }
-          } else if (toll > 0) {
-            // 付不起过路费，破产
-            player.isBankrupt = true
-            message.value = `${player.name} 付不起过路费，破产！`
-            // 将所有地皮转给所有者
-            transferProperties(player.id, property.ownerId!)
           }
+          autoEndTurn()
         } else if (!property.ownerId) {
-          message.value = `${player.name} 来到了空地皮 ${property.name}`
+          // 空地皮 - 可购买
+          message.value = `${player.name} 来到了空地皮 ${property.name}，可选择购买`
+          pendingAction.value = 'buy'
+          gameState.value.phase = 'action'
+        } else {
+          // 自有地皮 - 检查是否可升级或领取奖金
+          if (property.houseLevel >= 3) {
+            // 3级地皮领取奖金
+            const bonus = property.houseLevel * 50  // Lv3 = 200
+            player.money += bonus
+            message.value = `${player.name} 的 ${property.name} 带来奖金 ${bonus}`
+            autoEndTurn()
+          } else {
+            // 可升级
+            message.value = `${player.name} 的 ${property.name} Lv.${property.houseLevel}，可升级`
+            pendingAction.value = 'upgrade'
+            gameState.value.phase = 'action'
+          }
         }
         break
       }
-      case 'special':
-        // 特殊事件（如丧母、丧父等）暂时设为停留
+      case 'special': {
+        // 特殊事件
+        const effect = tile.effect || ''
         if (tile.name.includes('丧母') || tile.name.includes('丧父') || tile.name.includes('通判')) {
           player.stayTurns = 3
-          message.value = `${player.name} ${tile.name}，停留3回合`
+          message.value = `${player.name} ${tile.name}，原地停留3回合`
+        } else if (tile.name.includes('王安石变法')) {
+          player.money -= 1000
+          message.value = `${player.name} 遭受王安石变法，失去 1000`
+        } else if (tile.name.includes('乌台诗案')) {
+          const loseMoney = Math.max(0, player.money - 1000)
+          player.money = Math.max(1000, player.money - loseMoney)
+          if (player.money < 1000) {
+            player.isBankrupt = true
+            message.value = `${player.name} 乌台诗案，资产不足1000，破产！`
+          } else {
+            message.value = `${player.name} 乌台诗案，资产扣除到 1000`
+          }
+        } else if (tile.name.includes('入土为安')) {
+          // 获得墓碑卡（待实现道具系统）
+          message.value = `${player.name} ${tile.name}，获得墓碑卡`
+        } else if (tile.name.includes('兄弟团聚')) {
+          // 获得花束卡
+          message.value = `${player.name} ${player.name} ${tile.name}，获得花束卡`
+        } else if (tile.name.includes('追赠太师') || tile.name.includes('谥号')) {
+          // 抽2张道具卡（待实现）
+          message.value = `${player.name} ${tile.name}，抽2张道具卡`
+        } else if (tile.name.includes('连续五贬')) {
+          // 抽5张惩罚卡（待实现）
+          message.value = `${player.name} ${tile.name}，抽5张惩罚卡`
+        } else if (tile.name.includes('眉州') || tile.name.includes('汴京') || tile.name.includes('湖州') || tile.name.includes('常州')) {
+          // 起点格 - 停留效果
+          const stayMatch = effect.match(/原地停留(\d+)回合/)
+          if (stayMatch) {
+            player.stayTurns = parseInt(stayMatch[1])
+          }
+          message.value = `${player.name} 来到了 ${tile.name}`
+        } else {
+          message.value = `${player.name} 来到了 ${tile.name}`
         }
+        autoEndTurn()
         break
-      case 'start':
-        // 起点效果
-        message.value = `${player.name} 来到了 ${tile.name}`
+      }
+      case 'quiz': {
+        // 问答事件 - 触发问答（待实现具体题目）
+        // 暂时根据效果字段判断奖励
+        const effect = tile.effect || ''
+        const rewardMatch = effect.match(/回答正确[：:](.+)/)
+        if (rewardMatch) {
+          message.value = `${player.name} 来到了 ${tile.name}，${effect}（问答系统待实现）`
+        } else {
+          message.value = `${player.name} 来到了 ${tile.name}，回答正确+100（问答系统待实现）`
+        }
+        // TODO: 实现问答系统
+        autoEndTurn()
         break
+      }
+      case 'poetry': {
+        // 诗词事件 - 触发诗词（待实现）
+        message.value = `${player.name} 来到了 ${tile.name}（诗词系统待实现）`
+        // TODO: 实现诗词系统
+        autoEndTurn()
+        break
+      }
+      case 'reward': {
+        // 奖励事件 - 随机获得道具卡（待实现）
+        message.value = `${player.name} 来到了 ${tile.name}，获得随机道具卡（道具系统待实现）`
+        // TODO: 实现道具系统
+        autoEndTurn()
+        break
+      }
+      case 'punishment': {
+        // 惩罚事件 - 投骰子决定（待实现）
+        message.value = `${player.name} 来到了 ${tile.name}（惩罚系统待实现）`
+        // TODO: 实现惩罚系统
+        autoEndTurn()
+        break
+      }
+      case 'random': {
+        // 随机事件 - 投骰子，单数惩罚卡，双数道具卡
+        const dice = Math.floor(Math.random() * 6) + 1
+        if (dice % 2 === 1) {
+          message.value = `${player.name} 随机事件：骰子${dice}点，单数！抽取惩罚卡（待实现）`
+        } else {
+          message.value = `${player.name} 随机事件：骰子${dice}点，双数！抽取道具卡（待实现）`
+        }
+        // TODO: 实现卡牌系统
+        autoEndTurn()
+        break
+      }
       default:
-        message.value = `${player.name} 来到了 ${tile.name}`
+        autoEndTurn()
     }
+  }
+
+  // 自动结束回合（处理破产检测）
+  function autoEndTurn() {
+    // 检查是否只剩一个玩家
+    const activePlayers = gameState.value.players.filter(p => !p.isBankrupt)
+    if (activePlayers.length <= 1) {
+      gameState.value.winner = activePlayers[0]?.id || null
+      gameState.value.phase = 'ending'
+      message.value = `游戏结束！胜利者：${activePlayers[0]?.name}`
+      return
+    }
+
+    // 如果当前玩家破产，跳过
+    if (currentPlayer.value?.isBankrupt) {
+      skipBankruptPlayer()
+    } else {
+      gameState.value.phase = 'action'
+    }
+  }
+
+  // 跳过破产玩家
+  function skipBankruptPlayer() {
+    let nextIndex = (gameState.value.currentPlayerIndex + 1) % gameState.value.players.length
+    let attempts = 0
+    while (gameState.value.players[nextIndex].isBankrupt && attempts < gameState.value.players.length) {
+      nextIndex = (nextIndex + 1) % gameState.value.players.length
+      attempts++
+    }
+    gameState.value.currentPlayerIndex = nextIndex
+    if (nextIndex === 0) {
+      gameState.value.turnNumber++
+    }
+    gameState.value.phase = 'rolling'
+    lastDiceResult.value = null
+    pendingAction.value = null
   }
 
   // 转移玩家所有地皮
@@ -148,11 +280,12 @@ export const useGameStore = defineStore('game', () => {
     for (const prop of properties) {
       if (prop.ownerId === fromPlayerId) {
         prop.ownerId = toPlayerId
-        const toPlayer = gameState.value.players.find(p => p.id === toPlayerId)
-        if (toPlayer) {
-          toPlayer.properties.push(prop.id)
-        }
       }
+    }
+    // 从原玩家属性列表移除
+    const fromPlayer = gameState.value.players.find(p => p.id === fromPlayerId)
+    if (fromPlayer) {
+      fromPlayer.properties = []
     }
   }
 
@@ -172,9 +305,11 @@ export const useGameStore = defineStore('game', () => {
     player.money -= property.basePrice
     player.properties.push(propertyId)
     property.ownerId = playerId
-    property.houseLevel = 0
+    property.houseLevel = 1  // 购买时建造一级房屋
 
-    message.value = `${player.name} 购买了 ${property.name}`
+    message.value = `${player.name} 购买了 ${property.name}，建造 Lv.1 房屋`
+    pendingAction.value = null
+    autoEndTurn()
     return true
   }
 
@@ -201,24 +336,29 @@ export const useGameStore = defineStore('game', () => {
     property.houseLevel++
 
     message.value = `${player.name} 将 ${property.name} 升级为 Lv.${property.houseLevel}`
+    pendingAction.value = null
+    autoEndTurn()
     return true
+  }
+
+  // 跳过购买/升级（不执行任何操作直接结束回合）
+  function skipAction() {
+    pendingAction.value = null
+    autoEndTurn()
   }
 
   // 结束回合
   function endTurn() {
-    // 检查是否只剩一个玩家
-    const activePlayers = gameState.value.players.filter(p => !p.isBankrupt)
-    if (activePlayers.length <= 1) {
-      gameState.value.winner = activePlayers[0]?.id || null
-      gameState.value.phase = 'ending'
-      message.value = `游戏结束！胜利者：${activePlayers[0]?.name}`
-      return
-    }
+    pendingAction.value = null
 
     // 下一个玩家
     let nextIndex = (gameState.value.currentPlayerIndex + 1) % gameState.value.players.length
-    while (gameState.value.players[nextIndex].isBankrupt) {
+
+    // 跳过破产玩家
+    let attempts = 0
+    while (gameState.value.players[nextIndex].isBankrupt && attempts < gameState.value.players.length) {
       nextIndex = (nextIndex + 1) % gameState.value.players.length
+      attempts++
     }
 
     gameState.value.currentPlayerIndex = nextIndex
@@ -229,16 +369,6 @@ export const useGameStore = defineStore('game', () => {
 
     gameState.value.phase = 'rolling'
     lastDiceResult.value = null
-  }
-
-  // 检查胜利者
-  function checkWinner() {
-    const activePlayers = gameState.value.players.filter(p => !p.isBankrupt)
-    if (activePlayers.length === 1) {
-      gameState.value.winner = activePlayers[0].id
-      gameState.value.phase = 'ending'
-      message.value = `游戏结束！胜利者：${activePlayers[0].name}`
-    }
   }
 
   // 获取当前位置信息
@@ -254,11 +384,13 @@ export const useGameStore = defineStore('game', () => {
     isGameRunning,
     lastDiceResult,
     message,
+    pendingAction,
     initGame,
     rollDice,
     movePlayer,
     purchaseProperty,
     upgradeProperty,
+    skipAction,
     endTurn,
     getCurrentTile,
     getBoardProperties

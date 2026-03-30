@@ -49,13 +49,6 @@
           >
             <span>{{ getPropertyName(propId) }}</span>
             <span class="house-level">Lv.{{ getPropertyLevel(propId) }}</span>
-            <button
-              v-if="getPropertyLevel(propId) < 3"
-              class="upgrade-btn"
-              @click="onUpgrade(propId)"
-            >
-              升级
-            </button>
           </div>
         </div>
       </div>
@@ -72,24 +65,37 @@
         </div>
 
         <div class="action-bar">
+          <!-- 待处理动作时显示操作按钮 -->
+          <template v-if="pendingAction">
+            <div class="action-hint">{{ actionHint }}</div>
+            <button v-if="pendingAction === 'buy'" class="action-btn buy" @click="onBuy">购买</button>
+            <button v-if="pendingAction === 'upgrade'" class="action-btn upgrade" @click="onUpgrade">升级</button>
+            <button class="action-btn skip" @click="onSkip">跳过</button>
+          </template>
+
+          <!-- 投骰子 -->
           <Dice
+            v-else
             :value="lastDiceResult?.value || null"
             :canRoll="gameState.phase === 'rolling' && currentPlayer && !currentPlayer.isAI"
             @roll="onRoll"
           />
 
+          <!-- 当前格子信息 -->
           <div v-if="currentTile" class="current-tile-info">
             <strong>{{ currentTile.name }}</strong>
             <span v-if="currentTile.description"> - {{ currentTile.description }}</span>
-            <span v-if="currentTile.type === 'property'" class="toll-info">
-              [过路费: {{ getToll(currentTile.id) }}]
-            </span>
+            <span v-if="currentTile.effect" class="effect-info">【{{ currentTile.effect }}】</span>
           </div>
 
-          <div class="action-buttons" v-if="gameState.phase === 'action' && currentPlayer && !currentPlayer.isAI">
-            <button class="action-btn buy" @click="onBuy" v-if="canBuy">购买</button>
-            <button class="action-btn end" @click="onEndTurn">结束回合</button>
-          </div>
+          <!-- 结束回合按钮（action阶段无待处理动作时显示） -->
+          <button
+            v-if="gameState.phase === 'action' && !pendingAction"
+            class="action-btn end"
+            @click="onEndTurn"
+          >
+            结束回合
+          </button>
         </div>
       </div>
     </div>
@@ -113,6 +119,13 @@ const gameState = computed(() => store.gameState)
 const currentPlayer = computed(() => store.currentPlayer)
 const lastDiceResult = computed(() => store.lastDiceResult)
 const message = computed(() => store.message)
+const pendingAction = computed(() => store.pendingAction)
+
+const actionHint = computed(() => {
+  if (pendingAction.value === 'buy') return '是否购买此地皮？'
+  if (pendingAction.value === 'upgrade') return '是否升级房屋？'
+  return ''
+})
 
 const winnerName = computed(() => {
   if (!gameState.value.winner) return ''
@@ -121,16 +134,6 @@ const winnerName = computed(() => {
 })
 
 const currentTile = computed(() => store.getCurrentTile())
-
-const canBuy = computed(() => {
-  if (!currentPlayer.value || !currentTile.value) return false
-  if (currentTile.value.type !== 'property') return false
-
-  const property = getPropertyById(gameState.value.board, currentTile.value.id)
-  if (!property || property.ownerId) return false
-
-  return currentPlayer.value.money >= property.basePrice
-})
 
 function toggleCharacter(charId: string) {
   const index = selectedCharacters.value.indexOf(charId)
@@ -173,9 +176,15 @@ function onBuy() {
   }
 }
 
-function onUpgrade(propertyId: number) {
-  if (!currentPlayer.value) return
-  store.upgradeProperty(currentPlayer.value.id, propertyId)
+function onUpgrade() {
+  if (!currentPlayer.value || !currentTile.value) return
+  if (currentTile.value.type === 'property') {
+    store.upgradeProperty(currentPlayer.value.id, currentTile.value.id)
+  }
+}
+
+function onSkip() {
+  store.skipAction()
 }
 
 function onEndTurn() {
@@ -340,17 +349,7 @@ header h1 {
 .house-level {
   font-size: 12px;
   color: #ff9800;
-}
-
-.upgrade-btn {
   margin-left: auto;
-  padding: 4px 8px;
-  font-size: 12px;
-  background: #ff9800;
-  border: 1px solid #f57c00;
-  border-radius: 4px;
-  color: #fff;
-  cursor: pointer;
 }
 
 .game-main {
@@ -378,9 +377,18 @@ header h1 {
   padding: 16px;
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
   width: 100%;
   justify-content: center;
+  flex-wrap: wrap;
+}
+
+.action-hint {
+  font-size: 14px;
+  color: #666;
+  padding: 8px 12px;
+  background: #f5f5f5;
+  border-radius: 6px;
 }
 
 .current-tile-info {
@@ -390,12 +398,14 @@ header h1 {
   background: #fff8e7;
   border-radius: 6px;
   color: #333;
+  min-width: 200px;
 }
 
-.toll-info {
-  color: #ff6600;
+.effect-info {
+  display: block;
   font-size: 12px;
-  margin-left: 8px;
+  color: #ff6600;
+  margin-top: 4px;
 }
 
 .action-buttons {
@@ -421,6 +431,26 @@ header h1 {
 
 .action-btn.buy:hover {
   background: #5cb860;
+}
+
+.action-btn.upgrade {
+  background: #2196f3;
+  border-color: #1976d2;
+  color: #fff;
+}
+
+.action-btn.upgrade:hover {
+  background: #42a5f5;
+}
+
+.action-btn.skip {
+  background: #9e9e9e;
+  border-color: #757575;
+  color: #fff;
+}
+
+.action-btn.skip:hover {
+  background: #bdbdbd;
 }
 
 .action-btn.end {

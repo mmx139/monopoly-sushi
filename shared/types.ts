@@ -7,6 +7,7 @@ export interface Tile {
   type: TileType
   name: string
   description?: string
+  effect?: string  // 格子效果描述
 }
 
 export interface Property extends Tile {
