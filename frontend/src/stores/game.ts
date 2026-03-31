@@ -5,8 +5,8 @@ import { BOARD_TEMPLATES, createBoard, getProperties, getPropertyById } from '@s
 import { INITIAL_MONEY, BOARD_SIZE, HOUSE_TOLLS, HOUSE_UPGRADE_PRICE } from '@shared/constants'
 import type { Player, GameState, Tile, DiceResult, Property, PlacedItem } from '@shared/types'
 import { aiMakeDecision } from './ai'
-import { drawQuizCard, drawPoetryCard, drawPunishmentCard } from '@shared/cards'
-import type { QuizCard, PoetryCard, PunishmentCard } from '@shared/cards'
+import { drawQuizCard, drawPoetryCard, drawPunishmentCard, drawItemCard } from '@shared/cards'
+import type { QuizCard, PoetryCard, PunishmentCard, ItemCard } from '@shared/cards'
 
 export const useGameStore = defineStore('game', () => {
   // 状态
@@ -313,9 +313,14 @@ export const useGameStore = defineStore('game', () => {
         break
       }
       case 'reward': {
-        // 奖励事件 - 随机获得道具卡（待实现）
-        message.value = `${player.name} 来到了 ${tile.name}，获得随机道具卡（道具系统待实现）`
-        // TODO: 实现道具系统
+        // 奖励事件 - 随机获得道具卡
+        const itemCard = drawItemCard()
+        if (itemCard) {
+          player.items.push(itemCard.id)
+          message.value = `${player.name} 来到了 ${tile.name}，获得道具卡【${itemCard.name}】`
+        } else {
+          message.value = `${player.name} 来到了 ${tile.name}，但道具卡已用完`
+        }
         autoEndTurn()
         break
       }
@@ -332,12 +337,21 @@ export const useGameStore = defineStore('game', () => {
         // 随机事件 - 投骰子，单数惩罚卡，双数道具卡
         const dice = Math.floor(Math.random() * 6) + 1
         if (dice % 2 === 1) {
-          message.value = `${player.name} 随机事件：骰子${dice}点，单数！抽取惩罚卡（待实现）`
+          const card = drawPunishmentCard()
+          currentCard.value = card
+          showCardModal.value = true
+          message.value = `${player.name} 随机事件：骰子${dice}点，单数！抽取惩罚卡【${card.name}】`
+          gameState.value.phase = 'card'
         } else {
-          message.value = `${player.name} 随机事件：骰子${dice}点，双数！抽取道具卡（待实现）`
+          const itemCard = drawItemCard()
+          if (itemCard) {
+            player.items.push(itemCard.id)
+            message.value = `${player.name} 随机事件：骰子${dice}点，双数！获得道具卡【${itemCard.name}】`
+          } else {
+            message.value = `${player.name} 随机事件：骰子${dice}点，双数！但道具卡已用完`
+          }
+          autoEndTurn()
         }
-        // TODO: 实现卡牌系统
-        autoEndTurn()
         break
       }
       default:
