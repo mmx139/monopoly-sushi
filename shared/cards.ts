@@ -160,8 +160,8 @@ export const ITEM_CARDS: ItemCard[] = [
   { id: 'tax', type: 'item', name: '征税令', description: '向指定1名其他玩家征收2000', effect: 'tax_2000', count: 5, auctionPrice: 50, consumeOnUse: true },
   { id: 'deed', type: 'item', name: '地契', description: '免费获得任意一块可购地皮', effect: 'free_property', count: 2, auctionPrice: 5000, consumeOnUse: true },
   { id: 'immunity', type: 'item', name: '免死金牌', description: '破产时自动使用，重生并获得5000，使用后不放回', effect: 'rebirth', count: 1, auctionPrice: 10000, consumeOnUse: false },
-  { id: 'tombstone', type: 'item', name: '墓碑', description: '获得时当场使用，指定地皮放置，踩中给予摆放玩家1000香火钱', effect: 'tombstone', count: 4, auctionPrice: 0, consumeOnUse: false },
-  { id: 'flower', type: 'item', name: '花束', description: '获得时若未放置过墓碑便存放，否则当场使用并与墓碑放在一起', effect: 'flower', count: 4, auctionPrice: 0, consumeOnUse: false },
+  { id: 'tombstone', type: 'item', name: '墓碑', description: '获得时当场使用，指定地皮放置，踩中给予摆放玩家1000香火钱（需配合花束获得）', effect: 'tombstone', count: 4, auctionPrice: 0, consumeOnUse: false },
+  { id: 'flower', type: 'item', name: '花束', description: '获得时若未放置过墓碑便存放，否则当场使用并与墓碑放在一起，墓碑收益提升至2000', effect: 'flower', count: 4, auctionPrice: 0, consumeOnUse: false },
 ]
 
 // 惩罚卡 - 需求文档001中4.4

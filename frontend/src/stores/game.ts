@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { BOARD_TEMPLATES, createBoard, getProperties, getPropertyById } from '@shared/board'
 import { INITIAL_MONEY, BOARD_SIZE, HOUSE_TOLLS, HOUSE_UPGRADE_PRICE } from '@shared/constants'
-import type { Player, GameState, Tile, DiceResult, Property } from '@shared/types'
+import type { Player, GameState, Tile, DiceResult, Property, PlacedItem } from '@shared/types'
 import { aiMakeDecision } from './ai'
 import { drawQuizCard, drawPoetryCard, drawPunishmentCard } from '@shared/cards'
 import type { QuizCard, PoetryCard, PunishmentCard } from '@shared/cards'
@@ -87,7 +87,10 @@ export const useGameStore = defineStore('game', () => {
       noItemTurns: 0,
       tollX2Turns: 0,
       doubleDice: false,
-      hasImmunity: false
+      hasImmunity: false,
+      hasTombstone: false,
+      tombstoneTileId: undefined,
+      tombstoneOwnerId: undefined
     }))
 
     gameState.value = {
@@ -241,12 +244,31 @@ export const useGameStore = defineStore('game', () => {
           }
           autoEndTurn()
         } else if (desc.includes('入土为安')) {
-          // 获得墓碑卡（待实现道具系统）
-          message.value = `${player.name} ${tile.name}，获得墓碑卡`
+          // 获得墓碑卡
+          if (!player.hasTombstone) {
+            player.items.push('tombstone')
+            message.value = `${player.name} ${tile.name}，获得墓碑卡（可放置）`
+          } else {
+            message.value = `${player.name} ${tile.name}，但已拥有墓碑卡`
+          }
           autoEndTurn()
         } else if (desc.includes('兄弟团聚')) {
           // 获得花束卡
-          message.value = `${player.name} ${tile.name}，获得花束卡`
+          // 检查是否已有墓碑
+          const hasTombstone = gameState.value.board.some(tile => tile.placedItems?.includes('tombstone'))
+          if (hasTombstone) {
+            // 与墓碑放在一起
+            for (const tile of gameState.value.board) {
+              if (tile.placedItems?.includes('tombstone')) {
+                tile.placedItems.push('flower')
+                break
+              }
+            }
+            message.value = `${player.name} ${tile.name}，与墓碑放在一起`
+          } else {
+            player.items.push('flower')
+            message.value = `${player.name} ${tile.name}，获得花束卡（可放置）`
+          }
           autoEndTurn()
         } else if (desc.includes('追赠太师') || desc.includes('谥号')) {
           // 抽2张道具卡（待实现）
@@ -779,12 +801,15 @@ export const useGameStore = defineStore('game', () => {
         message.value = `${player.name} 装备了免死金牌，破产时自动生效`
         return true // 不消耗
       },
-      // 墓碑：获得时当场使用，指定地皮放置，踩中给予摆放玩家1000香火钱
+      // 墓碑：获得时当场使用，指定地皮放置，踩中给予摆放玩家1000香火钱（需配合花束获得2000）
       tombstone: () => {
         if (targetTileId === undefined) return false
         const tile = gameState.value.board[targetTileId]
         if (!tile.placedItems) tile.placedItems = []
-        tile.placedItems.push('tombstone')
+        // 使用新类型 PlacedItem
+        tile.placedItems.push({ itemId: 'tombstone', ownerId: player.id })
+        player.hasTombstone = true
+        player.tombstoneTileId = targetTileId
         message.value = `${player.name} 在 ${tile.name} 放置了墓碑`
         // 不从背包移除（装备型）
         return true
@@ -793,24 +818,24 @@ export const useGameStore = defineStore('game', () => {
       flower: () => {
         // 检查是否已有墓碑
         let hasTombstone = false
+        let tombstoneTile: Tile | null = null
         for (const tile of gameState.value.board) {
-          if (tile.placedItems?.includes('tombstone')) {
+          if (tile.placedItems?.some(pi => pi.itemId === 'tombstone')) {
             hasTombstone = true
+            tombstoneTile = tile
             break
           }
         }
-        if (hasTombstone) {
+        if (hasTombstone && tombstoneTile) {
           // 与墓碑放在一起
-          for (const tile of gameState.value.board) {
-            if (tile.placedItems?.includes('tombstone')) {
-              tile.placedItems.push('flower')
-              break
-            }
-          }
+          tombstoneTile.placedItems?.push({ itemId: 'flower', ownerId: player.id })
           message.value = `${player.name} 使用花束，放在墓碑旁`
+        } else {
+          // 没有墓碑，存放花束
+          player.items.push('flower')
+          message.value = `${player.name} 获得花束卡（可与墓碑配合）`
         }
-        // 花束总是消耗
-        player.items.splice(itemIndex, 1)
+        // 花束总是消耗（除了存放的情况，但这里逻辑是获取时就消耗）
         return true
       }
     }
@@ -826,7 +851,8 @@ export const useGameStore = defineStore('game', () => {
   function handleTilePlacedItems(player: Player, tile: Tile) {
     if (!tile.placedItems || tile.placedItems.length === 0) return
 
-    for (const itemId of tile.placedItems) {
+    for (const placedItem of tile.placedItems as PlacedItem[]) {
+      const itemId = placedItem.itemId
       switch (itemId) {
         case 'rock':
         case 'trap':
@@ -844,10 +870,19 @@ export const useGameStore = defineStore('game', () => {
           }
           break
         case 'tombstone':
-          // 给摆放玩家1000香火钱（需要知道是谁放的）
-          // 简化：给1000
-          player.money -= 1000
-          message.value = `${player.name} 踩中墓碑，失去 1000 香火钱`
+          // 给摆放玩家香火钱（需与花束配合获得2000）
+          let tombstoneReward = 1000
+          let tombstoneHasFlower = false
+          for (const tile of gameState.value.board) {
+            const placedItems = tile.placedItems as PlacedItem[] | undefined
+            if (placedItems?.some(pi => pi.itemId === 'tombstone')) {
+              tombstoneHasFlower = placedItems.some(pi => pi.itemId === 'flower')
+              tombstoneReward = tombstoneHasFlower ? 2000 : 1000
+              break
+            }
+          }
+          player.money -= tombstoneReward
+          message.value = `${player.name} 踩中墓碑，失去 ${tombstoneReward} 香火钱`
           if (player.money < 0) {
             player.isBankrupt = true
             transferProperties(player.id, getNextPlayerId())
