@@ -1029,6 +1029,72 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
+  // 拍卖相关状态
+  const auctionProperties = ref<Property[]>([])
+  const auctionCurrentBid = ref(0)
+  const auctionHostId = ref<string | null>(null)
+  const auctionBidders = ref<Record<string, number>>({})
+  let auctionCallback: ((property: Property, bid: number, winnerId: string | null) => void) | null = null
+
+  // 开始拍卖（从道具卡或惩罚卡触发）
+  function startAuction(
+    properties: Property[],
+    startPrice: number,
+    callback: (property: Property, bid: number, winnerId: string | null) => void
+  ) {
+    auctionProperties.value = properties
+    auctionCurrentBid.value = startPrice
+    auctionHostId.value = currentPlayer.value?.id || null
+    auctionBidders.value = {}
+    auctionCallback = callback
+    gameState.value.phase = 'auction'
+    message.value = `开始拍卖：${properties.map(p => p.name).join(', ')}，起拍价 ${startPrice}`
+  }
+
+  // 结束拍卖
+  function endAuction() {
+    if (auctionCallback && auctionProperties.value.length > 0) {
+      // 简化：最高价者成交，无人出价则流拍
+      let highestBidder: string | null = null
+      let highestBid = auctionCurrentBid.value
+
+      for (const [playerId, bid] of Object.entries(auctionBidders.value)) {
+        if (!highestBidder || bid > highestBid) {
+          highestBidder = playerId
+          highestBid = bid
+        }
+      }
+
+      const property = auctionProperties.value[0]
+      auctionCallback(property, highestBid, highestBidder)
+    }
+    gameState.value.phase = 'action'
+  }
+
+  // 出价
+  function auctionBid(playerId: string, bid: number) {
+    if (gameState.value.phase !== 'auction') return
+    if (bid <= auctionCurrentBid.value) {
+      message.value = `出价 ${bid} 太低，当前最高价 ${auctionCurrentBid.value}`
+      return
+    }
+    auctionBidders.value[playerId] = bid
+    auctionCurrentBid.value = bid
+    message.value = `${getPlayerName(playerId)} 出价 ${bid}`
+  }
+
+  // Pass
+  function auctionPass(playerId: string) {
+    if (gameState.value.phase !== 'auction') return
+    message.value = `${getPlayerName(playerId)} Pass`
+    // 简化：每人只能Pass一次，连续3人Pass则结束
+  }
+
+  // 获取玩家名称
+  function getPlayerName(playerId: string): string {
+    return gameState.value.players.find(p => p.id === playerId)?.name || playerId
+  }
+
   return {
     gameState,
     currentPlayer,
@@ -1059,6 +1125,10 @@ export const useGameStore = defineStore('game', () => {
     applyPunishment,
     setMultiplayerCallbacks,
     startMultiplayer,
-    leaveMultiplayer
+    leaveMultiplayer,
+    startAuction,
+    endAuction,
+    auctionBid,
+    auctionPass
   }
 })
