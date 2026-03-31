@@ -28,9 +28,12 @@ Phase 2: 游戏核心开发
 ### 前端 (Vue3 + Pinia)
 - [x] `frontend/src/stores/game.ts` - Pinia 游戏状态管理
 - [x] `frontend/src/stores/ai.ts` - AI决策逻辑
+- [x] `frontend/src/composables/useWebSocket.ts` - WebSocket 客户端管理
 - [x] `frontend/src/components/Dice.vue` - 骰子组件
 - [x] `frontend/src/components/GameBoard.vue` - Canvas 棋盘渲染
 - [x] `frontend/src/components/PlayerPanel.vue` - 玩家信息面板
+- [x] `frontend/src/components/CardModal.vue` - 问答/诗词卡弹窗
+- [x] `frontend/src/components/RoomScreen.vue` - 房间系统UI
 - [x] `frontend/src/App.vue` - 主界面（角色选择 + 游戏界面）
 
 ### 后端 (FastAPI)
@@ -38,8 +41,21 @@ Phase 2: 游戏核心开发
 - [x] `backend/main.py` - FastAPI 主入口
 
 ## 进行中
-- [ ] B00002 格子编号修复
-- [ ] B00012 棋盘布局优化
+- [ ] P2 联机WebSocket客户端集成（useWebSocket.ts已创建，game.ts已支持联机状态）
+
+## Bug修复状态
+
+| Bug | 描述 | 状态 |
+|-----|------|------|
+| B00018 | 诗词事件UI修复：用户输入→系统自动判断 | Fixed |
+| B00013 | AI玩家不处理惩罚卡 | Fixed |
+| B00016 | 骰子投出后不显示数字 | Fixed |
+| B00017 | 道具卡系统状态未生效 | Pending on Verify |
+| B00014 | 问答卡抽卡动画 | Open |
+| B00019 | 卡牌抽取动画 | Open |
+| B00002 | 棋盘格子编号 | Open |
+| B00005 | 中间区域布局 | Open |
+| B00015 | 棋盘显示不全 | Open |
 
 ## 待办
 
@@ -57,6 +73,9 @@ Phase 2: 游戏核心开发
 - [x] AI 玩家
 - [x] 问答卡/诗词卡
 - [x] 中间区域卡堆
+- [x] 道具卡系统
+- [x] 惩罚卡系统
+- [x] 道具栏UI
 
 ### P2 联机
 - [x] WebSocket 服务器
@@ -65,8 +84,7 @@ Phase 2: 游戏核心开发
 - [ ] 实时同步（前端WebSocket客户端集成）
 
 ## 卡点
-- B00002: 格子编号与需求不一致，需重新检查棋盘数据和位置计算
-- B00008: 问答题库非需求文档正式题库，需获取001中4.1题库
+- P2联机: 前端WebSocket客户端与游戏逻辑的完整集成尚未完成
 
 ## 最后更新
-2026-03-31
+2026-03-31 (晚间)

@@ -77,7 +77,7 @@
           <Dice
             v-else
             :value="lastDiceResult?.value || null"
-            :canRoll="gameState.phase === 'rolling' && currentPlayer && !currentPlayer.isAI && !isStaying"
+            :canRoll="gameState.phase === 'rolling' && currentPlayer && !currentPlayer.isAI && !isStaying && !isWaitingForDice"
             @roll="onRoll"
           />
 
@@ -117,6 +117,22 @@
             <span class="house-level">Lv.{{ getPropertyLevel(propId) }}</span>
           </div>
         </div>
+
+        <!-- 玩家道具栏 -->
+        <div v-if="currentPlayer && currentPlayer.items.length > 0" class="player-items">
+          <h4>{{ currentPlayer.name }} 的道具</h4>
+          <div class="items-grid">
+            <div
+              v-for="itemId in currentPlayer.items"
+              :key="itemId"
+              class="item-card"
+              :title="getItemDescription(itemId)"
+              @click="onUseItem(itemId)"
+            >
+              {{ getItemName(itemId) }}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -135,6 +151,7 @@ import { ref, computed, watch } from 'vue'
 import { useGameStore } from './stores/game'
 import { CHARACTERS, HOUSE_TOLLS } from '@shared/constants'
 import { getPropertyById } from '@shared/board'
+import { ITEM_CARDS } from '@shared/cards'
 import GameBoard from './components/GameBoard.vue'
 import Dice from './components/Dice.vue'
 import PlayerPanel from './components/PlayerPanel.vue'
@@ -150,16 +167,32 @@ const currentPlayer = computed(() => store.currentPlayer)
 const lastDiceResult = computed(() => store.lastDiceResult)
 const message = computed(() => store.message)
 const pendingAction = computed(() => store.pendingAction)
+const isWaitingForDice = ref(false)
 
 // AI回合自动触发
 watch(() => gameState.value.phase, (phase) => {
   if (phase === 'rolling' && currentPlayer.value?.isAI) {
     store.takeAITurn()
   } else if (phase === 'card' && currentPlayer.value?.isAI) {
-    // AI答题：50%正确率
-    const correct = Math.random() > 0.5
+    // AI答题/背诵/惩罚
     setTimeout(() => {
-      store.handleCardAnswer(correct)
+      const card = currentCard.value
+      if (card?.type === 'quiz') {
+        const correct = Math.random() > 0.5
+        store.handleCardAnswer({ type: 'quiz', correct })
+      } else if (card?.type === 'poetry') {
+        const r = Math.random()
+        if (r < 0.6) {
+          store.handleCardAnswer({ type: 'poetry', result: 'full' })
+        } else if (r < 0.8) {
+          store.handleCardAnswer({ type: 'poetry', result: 'half' })
+        } else {
+          store.handleCardAnswer({ type: 'poetry', result: 'wrong' })
+        }
+      } else if (card?.type === 'punishment') {
+        // 惩罚卡自动执行
+        store.handleCardAnswer({ type: 'punishment', effect: card.effect })
+      }
     }, 1000)
   }
 })
@@ -226,10 +259,20 @@ function resetGame() {
 }
 
 function onRoll() {
+  // 防止重复投骰子
+  if (isWaitingForDice.value) return
+  isWaitingForDice.value = true
+
+  // 先投骰子设置结果，骰子组件收到值后自动播放动画
   const result = store.rollDice()
-  if (result.value) {
-    store.movePlayer(result.value)
-  }
+
+  // movePlayer 需要在骰子动画结束后执行
+  setTimeout(() => {
+    isWaitingForDice.value = false
+    if (result.value) {
+      store.movePlayer(result.value)
+    }
+  }, 800) // 等待骰子动画结束
 }
 
 function onBuy() {
@@ -254,8 +297,8 @@ function onEndTurn() {
   store.endTurn()
 }
 
-function onCardAnswer(correct: boolean) {
-  store.handleCardAnswer(correct)
+function onCardAnswer(result: { type: 'quiz'; correct: boolean } | { type: 'poetry'; result: 'full' | 'half' | 'wrong' }) {
+  store.handleCardAnswer(result)
 }
 
 function onCardClose() {
@@ -275,6 +318,30 @@ function getPropertyLevel(propertyId: number): number {
 function getToll(propertyId: number): number {
   const prop = getPropertyById(gameState.value.board, propertyId)
   return prop ? HOUSE_TOLLS[prop.houseLevel] || 0 : 0
+}
+
+function getItemName(itemId: string): string {
+  const item = ITEM_CARDS.find(i => i.id === itemId)
+  return item?.name || itemId
+}
+
+function getItemDescription(itemId: string): string {
+  const item = ITEM_CARDS.find(i => i.id === itemId)
+  return item?.description || ''
+}
+
+function onUseItem(itemId: string) {
+  // 对于需要选择目标或地皮的道具，显示提示
+  const targetItemIds = ['rock', 'trap', 'mousetrap', 'wine', 'robbery', 'thunder', 'explosion', 'tax', 'deed']
+  if (targetItemIds.includes(itemId)) {
+    message.value = `${getItemName(itemId)}：请在地图上选择目标地皮或其他玩家`
+    // 简化处理：随机选择目标
+    const players = gameState.value.players.filter(p => p.id !== currentPlayer.value?.id && !p.isBankrupt)
+    const targetPlayerId = players.length > 0 ? players[Math.floor(Math.random() * players.length)].id : undefined
+    store.useItemCard(itemId, targetPlayerId, currentTile.value?.id)
+  } else {
+    store.useItemCard(itemId)
+  }
 }
 </script>
 
@@ -466,6 +533,41 @@ header h1 {
   font-size: 12px;
   color: #ff9800;
   margin-left: auto;
+}
+
+.player-items {
+  background: #fff;
+  border: 2px solid #8b4513;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 12px;
+  text-align: left;
+}
+
+.player-items h4 {
+  margin: 0 0 8px 0;
+  color: #8b4513;
+}
+
+.items-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.item-card {
+  background: #87ceeb;
+  border: 1px solid #5cacdc;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.item-card:hover {
+  background: #5cacdc;
+  transform: scale(1.05);
 }
 
 .game-main {

@@ -8,6 +8,7 @@ export interface Tile {
   name: string
   description?: string
   effect?: string  // 格子效果描述
+  placedItems?: string[]  // 放置在此格子的道具ID列表
 }
 
 export interface Property extends Tile {
@@ -28,6 +29,10 @@ export interface Player {
   isAI: boolean
   isBankrupt: boolean
   stayTurns: number  // 停留回合数
+  noItemTurns: number  // 无法使用道具的回合数
+  tollX2Turns: number  // 过路费翻倍的回合数
+  doubleDice: boolean  // 下次可以投2枚骰子
+  hasImmunity: boolean  // 免疫一次破产
 }
 
 export interface GameState {

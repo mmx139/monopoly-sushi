@@ -11,7 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 const props = defineProps<{
   value: number | null
@@ -23,22 +23,11 @@ const emit = defineEmits<{
 }>()
 
 const isRolling = ref(false)
+let prevValue: number | null = null
 
 function onRoll() {
   if (!props.canRoll || isRolling.value) return
-
-  isRolling.value = true
-
-  // 模拟掷骰子动画
-  let count = 0
-  const interval = setInterval(() => {
-    count++
-    if (count >= 10) {
-      clearInterval(interval)
-      isRolling.value = false
-      emit('roll')
-    }
-  }, 80)
+  emit('roll')
 }
 
 function onClick() {
@@ -46,6 +35,23 @@ function onClick() {
     onRoll()
   }
 }
+
+// 监听value变化时播放动画
+watch(() => props.value, (newVal) => {
+  if (newVal !== null && newVal !== prevValue) {
+    prevValue = newVal
+    // 新值，开始动画
+    isRolling.value = true
+    let count = 0
+    const interval = setInterval(() => {
+      count++
+      if (count >= 10) {
+        clearInterval(interval)
+        isRolling.value = false
+      }
+    }, 80)
+  }
+})
 </script>
 
 <style scoped>

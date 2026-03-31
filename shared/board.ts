@@ -2,7 +2,7 @@
 
 import { Tile, TileType, Property } from './types'
 
-// 辅助函数：创建地皮
+// 辅助函数：创建地皮（id为棋盘位置编号：0-71逆时针排列，左下角为0）
 function createPropertyTile(id: number, name: string): Property {
   return {
     id,
@@ -10,7 +10,8 @@ function createPropertyTile(id: number, name: string): Property {
     name,
     basePrice: 1000,
     houseLevel: 0,
-    ownerId: null
+    ownerId: null,
+    placedItems: []
   }
 }
 
@@ -139,8 +140,8 @@ export function getProperties(board: Tile[]): Property[] {
   return board.filter((tile): tile is Property => tile.type === 'property')
 }
 
-// 获取地皮By ID
+// 获取地皮By ID（使用find查找，支持任意数据顺序）
 export function getPropertyById(board: Tile[], id: number): Property | undefined {
-  const tile = board[id]
+  const tile = board.find(t => t.id === id)
   return tile?.type === 'property' ? tile : undefined
 }

@@ -5,8 +5,8 @@ import { BOARD_TEMPLATES, createBoard, getProperties, getPropertyById } from '@s
 import { INITIAL_MONEY, BOARD_SIZE, HOUSE_TOLLS, HOUSE_UPGRADE_PRICE } from '@shared/constants'
 import type { Player, GameState, Tile, DiceResult, Property } from '@shared/types'
 import { aiMakeDecision } from './ai'
-import { drawQuizCard, drawPoetryCard } from '@shared/cards'
-import type { QuizCard, PoetryCard } from '@shared/cards'
+import { drawQuizCard, drawPoetryCard, drawPunishmentCard } from '@shared/cards'
+import type { QuizCard, PoetryCard, PunishmentCard } from '@shared/cards'
 
 export const useGameStore = defineStore('game', () => {
   // 状态
@@ -26,6 +26,40 @@ export const useGameStore = defineStore('game', () => {
   // 卡牌相关状态
   const currentCard = ref<QuizCard | PoetryCard | null>(null)
   const showCardModal = ref(false)
+
+  // 联机相关状态
+  const isMultiplayer = ref(false)
+  const roomId = ref<string | null>(null)
+  const localPlayerId = ref<string | null>(null)
+
+  // 联机回调函数
+  let broadcastAction: ((action: string, payload: any) => void) | null = null
+  let syncGameState: ((state: GameState) => void) | null = null
+
+  // 设置联机回调
+  function setMultiplayerCallbacks(
+    broadcast: (action: string, payload: any) => void,
+    sync: (state: GameState) => void
+  ) {
+    broadcastAction = broadcast
+    syncGameState = sync
+  }
+
+  // 开始联机模式
+  function startMultiplayer(rid: string, pid: string) {
+    isMultiplayer.value = true
+    roomId.value = rid
+    localPlayerId.value = pid
+  }
+
+  // 离开联机模式
+  function leaveMultiplayer() {
+    isMultiplayer.value = false
+    roomId.value = null
+    localPlayerId.value = null
+    broadcastAction = null
+    syncGameState = null
+  }
 
   // 计算属性
   const currentPlayer = computed(() => gameState.value.players[gameState.value.currentPlayerIndex])
@@ -49,7 +83,11 @@ export const useGameStore = defineStore('game', () => {
       items: [],
       isAI: config.isAI,
       isBankrupt: false,
-      stayTurns: 0
+      stayTurns: 0,
+      noItemTurns: 0,
+      tollX2Turns: 0,
+      doubleDice: false,
+      hasImmunity: false
     }))
 
     gameState.value = {
@@ -67,8 +105,21 @@ export const useGameStore = defineStore('game', () => {
 
   // 投骰子
   function rollDice(): DiceResult {
-    const value = Math.floor(Math.random() * 6) + 1
-    const result = { value, canReroll: true }
+    const player = currentPlayer.value
+    let value: number
+
+    if (player?.doubleDice) {
+      // 马车道具：投2枚骰子
+      const dice1 = Math.floor(Math.random() * 6) + 1
+      const dice2 = Math.floor(Math.random() * 6) + 1
+      value = dice1 + dice2
+      player.doubleDice = false // 消耗一次
+      message.value = `${player.name} 使用马车，投出 ${dice1} + ${dice2} = ${value}`
+    } else {
+      value = Math.floor(Math.random() * 6) + 1
+    }
+
+    const result = { value, canReroll: false }
     lastDiceResult.value = result
     return result
   }
@@ -106,13 +157,21 @@ export const useGameStore = defineStore('game', () => {
   function handleTileEffect(player: Player, position: number) {
     const tile = gameState.value.board[position]
 
+    // 先处理格子上的放置道具效果
+    handleTilePlacedItems(player, tile)
+
     switch (tile.type) {
       case 'property': {
         const property = tile as Property
         if (property.ownerId && property.ownerId !== player.id) {
           // 他人地皮 - 收取过路费
-          const toll = HOUSE_TOLLS[property.houseLevel] || 0
+          let toll = HOUSE_TOLLS[property.houseLevel] || 0
           if (toll > 0) {
+            // 检查过路费翻倍
+            if (player.tollX2Turns > 0) {
+              toll *= 2
+              message.value = `${player.name} 过路费翻倍！`
+            }
             if (player.money >= toll) {
               player.money -= toll
               const owner = gameState.value.players.find(p => p.id === property.ownerId)
@@ -122,9 +181,15 @@ export const useGameStore = defineStore('game', () => {
               }
             } else {
               // 付不起过路费，破产
-              player.isBankrupt = true
-              message.value = `${player.name} 付不起过路费 ${toll}，破产！`
-              transferProperties(player.id, property.ownerId!)
+              if (player.hasImmunity) {
+                player.hasImmunity = false
+                player.money = 1000
+                message.value = `${player.name} 免死金牌生效！保留 1000`
+              } else {
+                player.isBankrupt = true
+                message.value = `${player.name} 付不起过路费 ${toll}，破产！`
+                transferProperties(player.id, property.ownerId!)
+              }
             }
           }
           autoEndTurn()
@@ -233,10 +298,12 @@ export const useGameStore = defineStore('game', () => {
         break
       }
       case 'punishment': {
-        // 惩罚事件 - 投骰子决定（待实现）
-        message.value = `${player.name} 来到了 ${tile.name}（惩罚系统待实现）`
-        // TODO: 实现惩罚系统
-        autoEndTurn()
+        // 惩罚事件 - 抽取惩罚卡
+        const card = drawPunishmentCard()
+        currentCard.value = card
+        showCardModal.value = true
+        message.value = `${player.name} 来到了 ${tile.name}，抽取惩罚卡！`
+        gameState.value.phase = 'card'
         break
       }
       case 'random': {
@@ -402,6 +469,13 @@ export const useGameStore = defineStore('game', () => {
   function endTurn() {
     pendingAction.value = null
 
+    // 衰减当前玩家的状态
+    const current = currentPlayer.value
+    if (current) {
+      if (current.noItemTurns > 0) current.noItemTurns--
+      if (current.tollX2Turns > 0) current.tollX2Turns--
+    }
+
     // 下一个玩家
     let nextIndex = (gameState.value.currentPlayerIndex + 1) % gameState.value.players.length
 
@@ -486,28 +560,50 @@ export const useGameStore = defineStore('game', () => {
   }
 
   // 处理卡牌答题结果
-  function handleCardAnswer(correct: boolean) {
+  function handleCardAnswer(result: { type: 'quiz'; correct: boolean } | { type: 'poetry'; result: 'full' | 'half' | 'wrong' } | { type: 'punishment'; effect: string }) {
     const player = currentPlayer.value
     if (!player) return
 
     let reward = 0
-    if (currentCard.value?.type === 'quiz') {
-      reward = correct ? (currentCard.value as QuizCard).reward : 0
-    } else if (currentCard.value?.type === 'poetry') {
-      reward = correct ? (currentCard.value as PoetryCard).reward : -(currentCard.value as PoetryCard).penalty
+    let msg = ''
+
+    if (currentCard.value?.type === 'quiz' && result.type === 'quiz') {
+      reward = result.correct ? (currentCard.value as QuizCard).reward : 0
+      if (reward > 0) {
+        msg = `${player.name} 回答正确，获得 ${reward}！`
+      } else {
+        msg = `${player.name} 回答错误，无奖励`
+      }
+    } else if (currentCard.value?.type === 'poetry' && result.type === 'poetry') {
+      const poetryCard = currentCard.value as PoetryCard
+      switch (result.result) {
+        case 'full':
+          reward = poetryCard.reward
+          msg = `${player.name} 完整背诵，获得 ${reward}！`
+          break
+        case 'half':
+          reward = -poetryCard.halfPenalty
+          msg = `${player.name} 半首背诵，损失 ${-reward}！`
+          break
+        case 'wrong':
+          reward = 0
+          msg = `${player.name} 背诵错误，无奖惩`
+          break
+      }
+    } else if (currentCard.value?.type === 'punishment' && result.type === 'punishment') {
+      // 惩罚卡执行惩罚效果
+      applyPunishment(result.effect)
+      msg = message.value
     }
 
-    player.money += reward
+    // 惩罚卡不在这里处理（已在CardModal中处理），只更新状态
+    if (currentCard.value?.type !== 'punishment') {
+      player.money += reward
+    }
+
     showCardModal.value = false
     currentCard.value = null
-
-    if (reward > 0) {
-      message.value = `${player.name} 回答正确，获得 ${reward}！`
-    } else if (reward < 0) {
-      message.value = `${player.name} 回答错误，损失 ${-reward}！`
-    } else {
-      message.value = `${player.name} 回答错误，无奖励无惩罚`
-    }
+    message.value = msg
 
     gameState.value.phase = 'rolling'
     setTimeout(() => autoEndTurn(), 500)
@@ -521,6 +617,369 @@ export const useGameStore = defineStore('game', () => {
     autoEndTurn()
   }
 
+  // 使用道具卡
+  function useItemCard(itemId: string, targetPlayerId?: string, targetTileId?: number): boolean {
+    const player = currentPlayer.value
+    if (!player) return false
+
+    // 检查是否无法使用道具
+    if (player.noItemTurns > 0) {
+      message.value = `${player.name} 本回合无法使用道具`
+      return false
+    }
+
+    const itemIndex = player.items.indexOf(itemId)
+    if (itemIndex === -1) return false
+
+    const itemEffects: Record<string, () => boolean> = {
+      // 马车：可投2枚骰子按点数移动
+      carriage: () => {
+        player.doubleDice = true
+        message.value = `${player.name} 使用了马车，下回合可投2枚骰子`
+        player.items.splice(itemIndex, 1)
+        return true
+      },
+      // 如意令：免疫任意道具效果
+      ruyi: () => {
+        message.value = `${player.name} 使用了如意令，免疫下一次道具效果`
+        player.items.splice(itemIndex, 1)
+        return true
+      },
+      // 巨石/陷阱：指定地皮放置，踩中玩家停留1回合
+      rock: () => {
+        if (targetTileId === undefined) return false
+        const tile = gameState.value.board[targetTileId]
+        if (!tile.placedItems) tile.placedItems = []
+        tile.placedItems.push('rock')
+        message.value = `${player.name} 在 ${tile.name} 放置了巨石`
+        // 消耗型道具从背包移除
+        player.items.splice(itemIndex, 1)
+        return true
+      },
+      trap: () => {
+        if (targetTileId === undefined) return false
+        const tile = gameState.value.board[targetTileId]
+        if (!tile.placedItems) tile.placedItems = []
+        tile.placedItems.push('trap')
+        message.value = `${player.name} 在 ${tile.name} 放置了陷阱`
+        player.items.splice(itemIndex, 1)
+        return true
+      },
+      // 捕兽夹：踩中受伤就医失去500
+      mousetrap: () => {
+        if (targetTileId === undefined) return false
+        const tile = gameState.value.board[targetTileId]
+        if (!tile.placedItems) tile.placedItems = []
+        tile.placedItems.push('mousetrap')
+        message.value = `${player.name} 在 ${tile.name} 放置了捕兽夹`
+        player.items.splice(itemIndex, 1)
+        return true
+      },
+      // 扫帚：清除除墓碑与花束外的所有放置道具
+      broom: () => {
+        let cleared = 0
+        for (const tile of gameState.value.board) {
+          if (tile.placedItems) {
+            const before = tile.placedItems.length
+            tile.placedItems = tile.placedItems.filter(id => id === 'tombstone' || id === 'flower')
+            cleared += before - tile.placedItems.length
+          }
+        }
+        message.value = `${player.name} 使用扫帚清除了 ${cleared} 个陷阱`
+        player.items.splice(itemIndex, 1)
+        return true
+      },
+      // 酒：使1名指定其他玩家下一回合无法操作
+      wine: () => {
+        if (!targetPlayerId) return false
+        const target = gameState.value.players.find(p => p.id === targetPlayerId)
+        if (!target) return false
+        target.stayTurns = Math.max(target.stayTurns, 1) + 1 // 额外跳过1回合
+        message.value = `${player.name} 使用酒使 ${target.name} 跳过下回合`
+        player.items.splice(itemIndex, 1)
+        return true
+      },
+      // 客栈：再次触发当前地皮效果
+      inn: () => {
+        const currentTile = getCurrentTile()
+        if (currentTile) {
+          message.value = `${player.name} 使用客栈，再次触发 ${currentTile.name} 效果`
+          handleTileEffect(player, currentTile.id)
+        }
+        player.items.splice(itemIndex, 1)
+        return true
+      },
+      // 抄家令：从指定1名其他玩家抽取一张道具卡
+      robbery: () => {
+        if (!targetPlayerId) return false
+        const target = gameState.value.players.find(p => p.id === targetPlayerId)
+        if (!target || target.items.length === 0) {
+          message.value = `${target?.name || '目标'} 没有道具卡`
+          return false
+        }
+        const stolen = target.items.splice(0, 1)[0]
+        player.items.push(stolen)
+        message.value = `${player.name} 从 ${target.name} 抽取了 ${stolen}`
+        player.items.splice(itemIndex, 1)
+        return true
+      },
+      // 引雷符：指定地皮降一级
+      thunder: () => {
+        if (targetTileId === undefined) return false
+        const property = getPropertyById(gameState.value.board, targetTileId)
+        if (!property || property.type !== 'property' || !property.ownerId) {
+          message.value = '该地皮无法降级'
+          return false
+        }
+        if (property.houseLevel > 0) {
+          property.houseLevel--
+          message.value = `${player.name} 使用引雷符，${property.name} 降为 Lv.${property.houseLevel}`
+        }
+        player.items.splice(itemIndex, 1)
+        return true
+      },
+      // 爆裂符：指定玩家爆炸受伤，就医失去1000
+      explosion: () => {
+        if (!targetPlayerId) return false
+        const target = gameState.value.players.find(p => p.id === targetPlayerId)
+        if (!target) return false
+        target.money -= 1000
+        message.value = `${player.name} 使用爆裂符攻击 ${target.name}，失去 1000`
+        if (target.money < 0) {
+          target.isBankrupt = true
+          transferProperties(target.id, getNextPlayerId())
+        }
+        player.items.splice(itemIndex, 1)
+        return true
+      },
+      // 征税令：向指定玩家征收2000
+      tax: () => {
+        if (!targetPlayerId) return false
+        const target = gameState.value.players.find(p => p.id === targetPlayerId)
+        if (!target) return false
+        const amount = Math.min(2000, target.money)
+        target.money -= amount
+        player.money += amount
+        message.value = `${player.name} 向 ${target.name} 征收 ${amount}`
+        player.items.splice(itemIndex, 1)
+        return true
+      },
+      // 地契：免费获得任意一块可购地皮
+      deed: () => {
+        // 打开地皮选择界面（待实现）
+        message.value = `${player.name} 使用地契，可免费获得任意地皮`
+        pendingAction.value = 'deed'
+        gameState.value.phase = 'action'
+        player.items.splice(itemIndex, 1)
+        return true
+      },
+      // 免死金牌：破产时自动使用，重生并获得5000（被动技能，装备即生效）
+      immunity: () => {
+        player.hasImmunity = true
+        message.value = `${player.name} 装备了免死金牌，破产时自动生效`
+        return true // 不消耗
+      },
+      // 墓碑：获得时当场使用，指定地皮放置，踩中给予摆放玩家1000香火钱
+      tombstone: () => {
+        if (targetTileId === undefined) return false
+        const tile = gameState.value.board[targetTileId]
+        if (!tile.placedItems) tile.placedItems = []
+        tile.placedItems.push('tombstone')
+        message.value = `${player.name} 在 ${tile.name} 放置了墓碑`
+        // 不从背包移除（装备型）
+        return true
+      },
+      // 花束：获得时若未放置过墓碑便存放，否则当场使用并与墓碑放在一起
+      flower: () => {
+        // 检查是否已有墓碑
+        let hasTombstone = false
+        for (const tile of gameState.value.board) {
+          if (tile.placedItems?.includes('tombstone')) {
+            hasTombstone = true
+            break
+          }
+        }
+        if (hasTombstone) {
+          // 与墓碑放在一起
+          for (const tile of gameState.value.board) {
+            if (tile.placedItems?.includes('tombstone')) {
+              tile.placedItems.push('flower')
+              break
+            }
+          }
+          message.value = `${player.name} 使用花束，放在墓碑旁`
+        }
+        // 花束总是消耗
+        player.items.splice(itemIndex, 1)
+        return true
+      }
+    }
+
+    const effectFn = itemEffects[itemId]
+    if (effectFn) {
+      return effectFn()
+    }
+    return false
+  }
+
+  // 处理玩家踩中的格子道具效果
+  function handleTilePlacedItems(player: Player, tile: Tile) {
+    if (!tile.placedItems || tile.placedItems.length === 0) return
+
+    for (const itemId of tile.placedItems) {
+      switch (itemId) {
+        case 'rock':
+        case 'trap':
+          // 停留1回合
+          player.stayTurns = Math.max(player.stayTurns, 1) + 1
+          message.value = `${player.name} 踩中了 ${itemId === 'rock' ? '巨石' : '陷阱'}，停留1回合`
+          break
+        case 'mousetrap':
+          // 就医失去500
+          player.money -= 500
+          message.value = `${player.name} 踩中了捕兽夹，就医失去 500`
+          if (player.money < 0) {
+            player.isBankrupt = true
+            transferProperties(player.id, getNextPlayerId())
+          }
+          break
+        case 'tombstone':
+          // 给摆放玩家1000香火钱（需要知道是谁放的）
+          // 简化：给1000
+          player.money -= 1000
+          message.value = `${player.name} 踩中墓碑，失去 1000 香火钱`
+          if (player.money < 0) {
+            player.isBankrupt = true
+            transferProperties(player.id, getNextPlayerId())
+          }
+          break
+        case 'flower':
+          // 花束无负面效果
+          break
+      }
+    }
+  }
+
+  // 应用惩罚卡效果
+  function applyPunishment(punishmentId: string) {
+    const player = currentPlayer.value
+    if (!player) return
+
+    const punishmentEffects: Record<string, () => void> = {
+      // 原地停留2回合
+      stay_2: () => {
+        player.stayTurns = Math.max(player.stayTurns, 0) + 2
+        message.value = `${player.name} 原地停留2回合`
+      },
+      // 2回合无法使用道具卡片
+      no_item_2: () => {
+        player.noItemTurns = 2
+        message.value = `${player.name} 2回合无法使用道具卡片`
+      },
+      // 失去100
+      lose_100: () => {
+        player.money -= 100
+        message.value = `${player.name} 失去 100`
+      },
+      // 失去500
+      lose_500: () => {
+        player.money -= 500
+        message.value = `${player.name} 失去 500`
+      },
+      // 强制拍卖最高级地皮
+      auction_max: () => {
+        const properties = getBoardProperties().filter(p => p.ownerId === player.id)
+        if (properties.length > 0) {
+          const maxLevel = Math.max(...properties.map(p => p.houseLevel))
+          const maxProps = properties.filter(p => p.houseLevel === maxLevel)
+          // 随机选一个拍卖（待实现拍卖系统）
+          message.value = `${player.name} 的 ${maxProps[0].name} 被强制拍卖（待实现）`
+        }
+      },
+      // 后退10格
+      back_10: () => {
+        player.position = (player.position - 10 + BOARD_SIZE) % BOARD_SIZE
+        message.value = `${player.name} 后退10格`
+      },
+      // 失去1000
+      lose_1000: () => {
+        player.money -= 1000
+        message.value = `${player.name} 失去 1000`
+        if (player.money < 0) {
+          if (player.hasImmunity) {
+            player.hasImmunity = false
+            player.money = 1000
+            message.value = `${player.name} 免死金牌生效！保留 1000`
+          } else {
+            player.isBankrupt = true
+            transferProperties(player.id, getNextPlayerId())
+          }
+        }
+      },
+      // 失去5000
+      lose_5000: () => {
+        player.money -= 5000
+        message.value = `${player.name} 失去 5000`
+        if (player.money < 0) {
+          if (player.hasImmunity) {
+            player.hasImmunity = false
+            player.money = 1000
+            message.value = `${player.name} 免死金牌生效！保留 1000`
+          } else {
+            player.isBankrupt = true
+            transferProperties(player.id, getNextPlayerId())
+          }
+        }
+      },
+      // 回到起始格
+      back_start: () => {
+        player.position = 0
+        message.value = `${player.name} 回到起始格`
+      },
+      // 失去所有道具卡片
+      lose_all_items: () => {
+        player.items = []
+        message.value = `${player.name} 失去所有道具卡片`
+      },
+      // 接下来3回合过路费x2
+      toll_x2_3: () => {
+        player.tollX2Turns = 3
+        message.value = `${player.name} 接下来3回合过路费x2`
+      },
+      // 给所有其他玩家1000
+      give_all_1000: () => {
+        for (const p of gameState.value.players) {
+          if (p.id !== player.id && !p.isBankrupt) {
+            player.money -= 1000
+            p.money += 1000
+          }
+        }
+        message.value = `${player.name} 给所有其他玩家 1000`
+      },
+      // 赠与上一位玩家500
+      give_prev_500: () => {
+        const prevIndex = (gameState.value.currentPlayerIndex - 1 + gameState.value.players.length) % gameState.value.players.length
+        const prevPlayer = gameState.value.players[prevIndex]
+        if (prevPlayer && !prevPlayer.isBankrupt) {
+          player.money -= 500
+          prevPlayer.money += 500
+          message.value = `${player.name} 赠与 ${prevPlayer.name} 500`
+        }
+      },
+      // 随意赠与自己一个地皮给任意玩家
+      give_property: () => {
+        message.value = `${player.name} 可以将一个地皮赠与任意玩家（待实现）`
+        pendingAction.value = 'give_property'
+        gameState.value.phase = 'action'
+      }
+    }
+
+    const effectFn = punishmentEffects[punishmentId]
+    if (effectFn) {
+      effectFn()
+    }
+  }
+
   return {
     gameState,
     currentPlayer,
@@ -530,6 +989,9 @@ export const useGameStore = defineStore('game', () => {
     pendingAction,
     showCardModal,
     currentCard,
+    isMultiplayer,
+    roomId,
+    localPlayerId,
     initGame,
     rollDice,
     movePlayer,
@@ -542,6 +1004,12 @@ export const useGameStore = defineStore('game', () => {
     takeAITurn,
     aiHandleAction,
     handleCardAnswer,
-    closeCardModal
+    closeCardModal,
+    useItemCard,
+    handleTilePlacedItems,
+    applyPunishment,
+    setMultiplayerCallbacks,
+    startMultiplayer,
+    leaveMultiplayer
   }
 })

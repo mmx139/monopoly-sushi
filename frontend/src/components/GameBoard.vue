@@ -17,8 +17,8 @@ const props = defineProps<{
 }>()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
-const boardSize = 900
-const padding = 50
+const boardSize = 800
+const padding = 25
 
 // 格子颜色配置（基于 001_game_rules.md）
 const TILE_COLORS: Record<string, string> = {
@@ -42,13 +42,13 @@ function getTilePosition(tileIndex: number): { x: number; y: number } {
   if (tileIndex <= 17) {
     return {
       x: padding,
-      y: boardSize - padding - (tileIndex + 1) * gridSize
+      y: boardSize - padding - tileIndex * gridSize
     }
   }
   // 18-35: 上边往右 (左上角18，到右上角35)
   if (tileIndex <= 35) {
     return {
-      x: padding + (tileIndex - 18 + 1) * gridSize,
+      x: padding + (tileIndex - 18) * gridSize,
       y: padding
     }
   }
@@ -56,12 +56,12 @@ function getTilePosition(tileIndex: number): { x: number; y: number } {
   if (tileIndex <= 53) {
     return {
       x: boardSize - padding,
-      y: padding + (tileIndex - 36 + 1) * gridSize
+      y: padding + (tileIndex - 36) * gridSize
     }
   }
   // 54-71: 下边往左 (右下角54，到左下角71)
   return {
-    x: boardSize - padding - (tileIndex - 54 + 1) * gridSize,
+    x: boardSize - padding - (tileIndex - 54) * gridSize,
     y: boardSize - padding
   }
 }
@@ -98,8 +98,8 @@ function drawBoard() {
 
   // 绘制72格
   for (let i = 0; i < BOARD_TEMPLATES.length; i++) {
-    const pos = getTilePosition(i)
     const tile = BOARD_TEMPLATES[i]
+    const pos = getTilePosition(tile.id)
 
     // 格子背景色
     const bgColor = TILE_COLORS[tile.type] || '#fff8e7'
@@ -111,16 +111,16 @@ function drawBoard() {
     ctx.lineWidth = 1
     ctx.strokeRect(pos.x, pos.y, gridSize - 2, gridSize - 2)
 
-    // 格子编号（右上角，小字）
+    // 格子编号（右上角，小字）- 使用位置编号显示
     ctx.fillStyle = '#666'
-    ctx.font = '10px sans-serif'
+    ctx.font = '11px sans-serif'
     ctx.textAlign = 'right'
     ctx.textBaseline = 'top'
     ctx.fillText(String(tile.id), pos.x + gridSize - 4, pos.y + 2)
 
     // 格子名称（居中，2行显示）
     ctx.fillStyle = '#333'
-    ctx.font = 'bold 11px sans-serif'
+    ctx.font = 'bold 12px sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
 
@@ -219,17 +219,17 @@ function drawCenterArea(ctx: CanvasRenderingContext2D, centerX: number, centerY:
     }
   }
 
-  // 绘制货币图标（中央）
+  // 绘制货币图标（中央）- 缩小避免覆盖卡片
   ctx.fillStyle = '#ffd700'
   ctx.beginPath()
-  ctx.arc(centerX, centerY, gridSize * 0.8, 0, Math.PI * 2)
+  ctx.arc(centerX, centerY, gridSize * 0.4, 0, Math.PI * 2)
   ctx.fill()
   ctx.strokeStyle = '#8b4513'
-  ctx.lineWidth = 3
+  ctx.lineWidth = 2
   ctx.stroke()
 
   ctx.fillStyle = '#333'
-  ctx.font = 'bold 16px sans-serif'
+  ctx.font = 'bold 14px sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText('💰', centerX, centerY)
@@ -251,12 +251,16 @@ watch(() => [props.players, props.currentPlayerId], () => {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  margin-top: 0;
+  margin-top: -20px;
+  max-width: 100%;
+  overflow: visible;
 }
 
 .board {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   border-radius: 8px;
-  overflow: hidden;
+  overflow: visible;
+  max-width: 100%;
+  height: auto;
 }
 </style>
